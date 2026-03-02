@@ -2332,8 +2332,23 @@ where
                 todo!();
             }
             // FieldUnitKind::Index { ref index, ref data } => {
-            FieldUnitKind::Index { .. } => {
+            #[allow(unused_variables)] // Just for the time being
+            FieldUnitKind::Index { ref index, ref data } => {
                 // TODO: configure the correct index
+                let Object::FieldUnit(ref idx) = **index else { panic!() };
+                let Object::FieldUnit(ref data) = **data else { panic!() };
+                warn!("field {:#?}", field);
+                warn!("Field access width: {:#?}", field.flags.access_type_bytes());
+                warn!("index {:#?}", idx);
+                warn!("Index access width: {:#?}", idx.flags.access_type_bytes());
+                let FieldUnitKind::Normal { region } = &idx.kind else { panic!() };
+                let Object::OpRegion(ref region) = **region else { panic!() };
+                warn!("Index region: {:#?}", region);
+                warn!("data {:#?}", data);
+                warn!("data access width: {:#?}", data.flags.access_type_bytes());
+                let FieldUnitKind::Normal { region } = &data.kind else { panic!() };
+                let Object::OpRegion(ref region) = **region else { panic!() };
+                warn!("data region: {:#?}", region);
                 todo!();
             }
         };

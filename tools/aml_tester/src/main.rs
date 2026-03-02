@@ -60,7 +60,7 @@ fn main() -> std::io::Result<()> {
         return Ok(());
     }
     log::set_logger(&Logger).unwrap();
-    log::set_max_level(log::LevelFilter::Trace);
+    log::set_max_level(log::LevelFilter::Info);
 
     let matches = cmd.get_matches();
 
