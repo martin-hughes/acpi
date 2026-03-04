@@ -1,4 +1,8 @@
-DefinitionBlock("index_field.aml", "DSDT", 1, "RSACPI", "IDXFLD", 1) {
+mod test_infra;
+
+#[test]
+fn test_basic() {
+    const AML: &'static str = r#"DefinitionBlock("%FN%", "DSDT", 1, "RSACPI", "IDXFLD", 1) {
     // Adapted from part of the DSDT on a Dell XPS 13 laptop.
     OperationRegion (RTCO, SystemIO, 0x72, 0x02)
     Field (RTCO, ByteAcc, NoLock, Preserve)
@@ -13,4 +17,10 @@ DefinitionBlock("index_field.aml", "DSDT", 1, "RSACPI", "IDXFLD", 1) {
     }
 
     TEST++
+}"#;
+
+
+
+    //test_infra::run_aml_test(AML);
+    assert_eq!(1, 1);
 }

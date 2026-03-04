@@ -479,6 +479,13 @@ pub(crate) fn copy_bits(
     }
 }
 
+/// Truncate `value` (i.e. round down) so that is aligned on an integer multiple of `align`.
+///
+/// This can be used, for example, to calculate memory-aligned addresses for a specific buffer.
+///
+/// `align` must be a power of two. (N.B. It is *not* the bit index, it is the actual alignment value)
+///
+/// Panics if `align` is not zero, or a power of two.
 #[inline]
 pub(crate) fn align_down(value: usize, align: usize) -> usize {
     assert!(align == 0 || align.is_power_of_two());
@@ -510,5 +517,14 @@ mod tests {
 
         copy_bits(&src, 0, &mut dst, 2, 15);
         assert_eq!(dst, [0b1111_1101, 0b1101_1110, 0b0000_0001, 0b0000_0000, 0b0000_0000]);
+    }
+
+    #[test]
+    fn test_align_down() {
+        assert_eq!(align_down(1, 0), 1);
+        assert_eq!(align_down(1, 1), 1);
+        assert_eq!(align_down(1, 2), 0);
+        assert_eq!(align_down(15, 4), 12);
+        assert_eq!(align_down(15, 8), 8);
     }
 }

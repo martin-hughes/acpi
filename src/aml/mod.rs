@@ -2315,6 +2315,7 @@ where
             Buffer(Vec<u8>),
         }
         let mut output = if needs_buffer {
+            // MCH TODO - should this length be divided by 8?
             Output::Buffer(vec![0; field.bit_length.next_multiple_of(8)])
         } else {
             Output::Integer([0; 8])
