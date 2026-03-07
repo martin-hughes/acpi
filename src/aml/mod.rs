@@ -201,6 +201,7 @@ where
         }
     }
 
+    /// NB: Custom region handlers are not yet supported.
     pub fn install_region_handler<RH>(&self, space: RegionSpace, handler: RH)
     where
         RH: RegionHandler + 'static,
@@ -1112,6 +1113,7 @@ where
                 }
                 Err(other_err) => return Err(other_err),
             };
+            info!("Handling opcode: {:?}", opcode);
             match opcode {
                 Opcode::Zero => {
                     context.last_op()?.arguments.push(Argument::Object(Object::Integer(0).wrap()));

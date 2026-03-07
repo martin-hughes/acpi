@@ -91,7 +91,7 @@ pub struct ObjectToken {
 
 impl ObjectToken {
     /// Create an [`ObjectToken`]. This should **only** be done **once** by the main interpreter,
-    /// as contructing your own token allows invalid mutable access to objects.
+    /// as constructing your own token allows invalid mutable access to objects.
     pub(super) unsafe fn create_interpreter_token() -> ObjectToken {
         ObjectToken { _dont_construct_me: () }
     }
