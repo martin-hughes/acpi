@@ -54,23 +54,27 @@ where
     }
 
     fn read_u8(&self, address: usize) -> u8 {
-        info!("read_u8(address={:#x})", address);
-        self.next_handler.read_u8(address)
+        let value = self.next_handler.read_u8(address);
+        info!("read_u8(address={:#x}) -> {:#x}", address, value);
+        value
     }
 
     fn read_u16(&self, address: usize) -> u16 {
-        info!("read_u16(address={:#x})", address);
-        self.next_handler.read_u16(address)
+        let value = self.next_handler.read_u16(address);
+        info!("read_u16(address={:#x}) -> {:#x}", address, value);
+        value
     }
 
     fn read_u32(&self, address: usize) -> u32 {
-        info!("read_u32(address={:#x})", address);
-        self.next_handler.read_u32(address)
+        let value = self.next_handler.read_u32(address);
+        info!("read_u32(address={:#x}) -> {:#x}", address, value);
+        value
     }
 
     fn read_u64(&self, address: usize) -> u64 {
-        info!("read_u64(address={:#x})", address);
-        self.next_handler.read_u64(address)
+        let value = self.next_handler.read_u64(address);
+        info!("read_u64(address={:#x}) -> {:#x}", address, value);
+        value
     }
 
     fn write_u8(&self, address: usize, value: u8) {
@@ -94,18 +98,21 @@ where
     }
 
     fn read_io_u8(&self, port: u16) -> u8 {
-        info!("read_io_u8(port={:#x})", port);
-        self.next_handler.read_io_u8(port)
+        let value = self.next_handler.read_io_u8(port);
+        info!("read_io_u8(port={:#x}) -> {:#x}", port, value);
+        value
     }
 
     fn read_io_u16(&self, port: u16) -> u16 {
-        info!("read_io_u16(port={:#x})", port);
-        self.next_handler.read_io_u16(port)
+        let value = self.next_handler.read_io_u16(port);
+        info!("read_io_u16(port={:#x}) -> {:#x}", port, value);
+        value
     }
 
     fn read_io_u32(&self, port: u16) -> u32 {
-        info!("read_io_u32(port={:#x})", port);
-        self.next_handler.read_io_u32(port)
+        let value = self.next_handler.read_io_u32(port);
+        info!("read_io_u32(port={:#x}) -> {:#x}", port, value);
+        value
     }
 
     fn write_io_u8(&self, port: u16, value: u8) {
@@ -124,18 +131,21 @@ where
     }
 
     fn read_pci_u8(&self, address: PciAddress, offset: u16) -> u8 {
-        info!("read_pci_u8(address={:?}, offset={:#x})", address, offset);
-        self.next_handler.read_pci_u8(address, offset)
+        let value = self.next_handler.read_pci_u8(address, offset);
+        info!("read_pci_u8(address={:?}, offset={:#x}) -> {:#x}", address, offset, value);
+        value
     }
 
     fn read_pci_u16(&self, address: PciAddress, offset: u16) -> u16 {
-        info!("read_pci_u16(address={:?}, offset={:#x})", address, offset);
-        self.next_handler.read_pci_u16(address, offset)
+        let value = self.next_handler.read_pci_u16(address, offset);
+        info!("read_pci_u16(address={:?}, offset={:#x}) -> {:#x}", address, offset, value);
+        value
     }
 
     fn read_pci_u32(&self, address: PciAddress, offset: u16) -> u32 {
-        info!("read_pci_u32(address={:?}, offset={:#x})", address, offset);
-        self.next_handler.read_pci_u32(address, offset)
+        let value = self.next_handler.read_pci_u32(address, offset);
+        info!("read_pci_u32(address={:?}, offset={:#x}) -> {:#x}", address, offset, value);
+        value
     }
 
     fn write_pci_u8(&self, address: PciAddress, offset: u16, value: u8) {

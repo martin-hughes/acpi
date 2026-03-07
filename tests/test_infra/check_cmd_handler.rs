@@ -1,9 +1,48 @@
-use std::mem::ManuallyDrop;
-use crate::test_infra::{AcpiCommands, null_handler::NullHandler};
+use crate::test_infra::null_handler::NullHandler;
 use acpi::{Handle, Handler, PhysicalMapping, aml::AmlError};
 use pci_types::PciAddress;
-use std::sync::{Arc, atomic::AtomicUsize};
+use std::{
+    mem::ManuallyDrop,
+    sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering::Relaxed},
+    },
+};
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum AcpiCommands {
+    MapPhysicalRegion(usize, usize),
+    UnmapPhysicalRegion(usize),
+    ReadU8(usize),
+    ReadU16(usize),
+    ReadU32(usize),
+    ReadU64(usize),
+    WriteU8(usize, u8),
+    WriteU16(usize, u16),
+    WriteU32(usize, u32),
+    WriteU64(usize, u64),
+    ReadIoU8(u16),
+    ReadIoU16(u16),
+    ReadIoU32(u16),
+    WriteIoU8(u16, u8),
+    WriteIoU16(u16, u16),
+    WriteIoU32(u16, u32),
+    ReadPciU8(PciAddress, u16),
+    ReadPciU16(PciAddress, u16),
+    ReadPciU32(PciAddress, u16),
+    WritePciU8(PciAddress, u16, u8),
+    WritePciU16(PciAddress, u16, u16),
+    WritePciU32(PciAddress, u16, u32),
+    NanosSinceBoot,
+    Stall(u64),
+    Sleep(u64),
+    CreateMutex,
+    Acquire(Handle, u16),
+    Release(Handle),
+}
+
+/// A wrapper around another Handler that checks the correct sequence of commands are being
+/// generated, and that they have the expected parameters.
 #[derive(Clone, Debug)]
 pub struct CheckCommandHandler<H>
 where
@@ -23,7 +62,7 @@ where
     }
 
     fn check_command(&self, command: AcpiCommands) {
-        let next_command_idx = self.next_command_idx.load(std::sync::atomic::Ordering::Relaxed);
+        let next_command_idx = self.next_command_idx.load(Relaxed);
         let next_command = self.commands.get(next_command_idx);
 
         if next_command.is_none() {
@@ -32,7 +71,7 @@ where
 
         assert_eq!(*next_command.unwrap(), command);
 
-        self.next_command_idx.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.next_command_idx.fetch_add(1, Relaxed);
     }
 }
 
@@ -74,7 +113,12 @@ where
     fn unmap_physical_region<T>(region: &PhysicalMapping<Self, T>) {
         // This function can be called during a panic, and it's pretty unlikely this command will
         // be in the expected commands list...
-        if !std::thread::panicking() {
+        //
+        // Also stop checking if we're at or past the end of the command list. This stops any
+        // confusion about whether we're in Drop or not.
+        if !std::thread::panicking()
+            && region.handler.commands.len() > region.handler.next_command_idx.load(Relaxed)
+        {
             region.handler.check_command(AcpiCommands::UnmapPhysicalRegion(region.physical_start));
         }
 

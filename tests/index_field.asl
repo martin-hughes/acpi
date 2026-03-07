@@ -12,5 +12,5 @@ DefinitionBlock("index_field.aml", "DSDT", 1, "RSACPI", "IDXFLD", 1) {
         TEST,   16
     }
 
-    TEST++
+    //TEST++
 }
