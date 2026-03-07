@@ -2,6 +2,7 @@ pub mod check_cmd_handler;
 pub mod listed_response_handler;
 pub mod logging_handler;
 pub mod null_handler;
+pub mod std_test_handler;
 
 use acpi::Handler;
 use aml_test_tools::{TestResult, new_interpreter, resolve_and_compile, run_test_for_file};

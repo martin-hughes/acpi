@@ -2,6 +2,7 @@ use crate::test_infra::{
     check_cmd_handler::{AcpiCommands as CheckCommands, CheckCommandHandler},
     listed_response_handler::{AcpiCommands as Results, ListedResponseHandler},
     null_handler::NullHandler,
+    std_test_handler::{Command, construct_std_handler},
 };
 
 mod test_infra;
@@ -50,25 +51,15 @@ fn test_fields() {
 }
 "#;
 
-    const EXPECTED_COMMANDS: &[CheckCommands] = &[
-        CheckCommands::CreateMutex,
-        CheckCommands::ReadIoU16(0x40),
-        CheckCommands::WriteIoU16(0x40, 0x04),
-        CheckCommands::ReadIoU16(0x40),
-        CheckCommands::ReadIoU16(0x40),
-        CheckCommands::WriteIoU16(0x40, 0x204),
+    const EXPECTED_COMMANDS: &[Command] = &[
+        (CheckCommands::CreateMutex, Results::Skip()),
+        (CheckCommands::ReadIoU16(0x40), Results::ReadIoU16(0)),
+        (CheckCommands::WriteIoU16(0x40, 0x04), Results::Skip()),
+        (CheckCommands::ReadIoU16(0x40), Results::ReadIoU16(4)),
+        (CheckCommands::ReadIoU16(0x40), Results::ReadIoU16(4)),
+        (CheckCommands::WriteIoU16(0x40, 0x204), Results::Skip()),
     ];
 
-    const RESPONSES: &[Results] = &[
-        Results::Skip(),
-        Results::ReadIoU16(0),
-        Results::Skip(),
-        Results::ReadIoU16(4),
-        Results::ReadIoU16(4),
-        Results::Skip(),
-    ];
-    let handler =
-        CheckCommandHandler::new(EXPECTED_COMMANDS.to_vec(), ListedResponseHandler::new(RESPONSES.to_vec()));
-
+    let handler = construct_std_handler(EXPECTED_COMMANDS.to_vec());
     test_infra::run_aml_test(AML, handler);
 }
