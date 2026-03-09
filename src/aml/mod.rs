@@ -2326,10 +2326,11 @@ where
 
         let read_region = match field.kind {
             FieldUnitKind::Normal { ref region } => region,
-            // FieldUnitKind::Bank { ref region, ref bank, bank_value } => {
-            FieldUnitKind::Bank { .. } => {
-                // TODO: put the bank_value in the bank
-                todo!();
+            FieldUnitKind::Bank { ref region, ref bank, bank_value } => {
+                let Object::FieldUnit(ref bank) = **bank else { panic!() };
+                assert!(matches!(bank.kind, FieldUnitKind::Normal{ .. }));
+                self.do_field_write(bank, Object::Integer(bank_value).wrap())?;
+                region
             }
             // FieldUnitKind::Index { ref index, ref data } => {
             FieldUnitKind::Index { .. } => {
@@ -2382,16 +2383,21 @@ where
             Object::Buffer(bytes) => bytes,
             _ => Err(AmlError::ObjectNotOfExpectedType { expected: ObjectType::Integer, got: value.typ() })?,
         };
+
+        // TODO: I think this will be wrong for Index fields, where we want to use the width of the
+        // data access register, not the field itself.
+        //
+        // TODO: Check that this plays well with the 'preserve' functionality.
         let access_width_bits = field.flags.access_type_bytes()? * 8;
 
         let write_region = match field.kind {
             FieldUnitKind::Normal { ref region } => region,
-            // FieldUnitKind::Bank { ref region, ref bank, bank_value } => {
-            FieldUnitKind::Bank { .. } => {
-                // TODO: put the bank_value in the bank
-                todo!();
+            FieldUnitKind::Bank { ref region, ref bank, bank_value } => {
+                let Object::FieldUnit(ref bank) = **bank else { panic!() };
+                assert!(matches!(bank.kind, FieldUnitKind::Normal{ .. }));
+                self.do_field_write(bank, Object::Integer(bank_value).wrap())?;
+                region
             }
-            // FieldUnitKind::Index { ref index, ref data } => {
             FieldUnitKind::Index { .. } => {
                 // TODO: configure the correct index
                 todo!();
@@ -2409,7 +2415,14 @@ where
         let mut written_so_far = 0;
 
         for i in 0..native_accesses_needed {
-            let aligned_offset = object::align_down(field.bit_index + i * access_width_bits, access_width_bits);
+            // Advance the write pointer... For normal and bank fields this is straightforward. For
+            // Index fields, this also involves updating the index register.
+            let aligned_offset = match field.kind {
+                FieldUnitKind::Normal { .. } | FieldUnitKind::Bank { .. } => {
+                    object::align_down(field.bit_index + i * access_width_bits, access_width_bits)
+                }
+                FieldUnitKind::Index { .. } => todo!(),
+            };
             let dst_index = if i == 0 { field.bit_index % access_width_bits } else { 0 };
 
             /*
