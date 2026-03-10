@@ -1337,6 +1337,33 @@ where
                         let (_, data) = namespace.search(&data_name, &context.current_scope)?;
                         (index, data)
                     };
+
+                    if let Object::FieldUnit(ref data_fu) = *data {
+                        if data_fu.flags.access_type_bytes()? < FieldFlags(field_flags).access_type_bytes()? {
+                            // On ACPICA this causes reads/writes to be truncated to the width of
+                            // the data register.
+                            //
+                            // The issue comes from this part of the spec:
+                            // "The value written to the IndexName register is defined to be a byte
+                            // offset that is aligned on an AccessType boundary."
+                            //
+                            // Consider the case where the index field is WordAcc but the data
+                            // register is ByteAcc. Only even numbers could be written to the index
+                            // register - multiples of width of word (2 bytes). But to access the
+                            // high byte of the word for the field, we'd need to write an odd number
+                            // to the index register. Which is not compatible with the spec.
+                            //
+                            // The ASL writer shouldn't have allowed this. And it seems that most
+                            // uses of IndexField are ByteAcc all around. So whatever strange
+                            // behaviour we allow is probably OK.
+                            //
+                            // But warn the user, just in case.
+                            warn!("Data field access width is smaller than normal field width at {:?}", start_pc);
+                        }
+                    } else {
+                        warn!("Wrong data field type in IndexField: {:?}", data);
+                    };
+
                     let kind = FieldUnitKind::Index { index, data };
                     self.parse_field_list(&mut context, kind, start_pc, pkg_length, field_flags)?;
                 }
@@ -2324,18 +2351,19 @@ where
             Output::Integer(value) => value,
         };
 
-        let read_region = match field.kind {
-            FieldUnitKind::Normal { ref region } => region,
+        let (read_region, access_width_bits, index_field_idx) = match field.kind {
+            FieldUnitKind::Normal { ref region } => (region, access_width_bits, 0),
             FieldUnitKind::Bank { ref region, ref bank, bank_value } => {
                 let Object::FieldUnit(ref bank) = **bank else { panic!() };
-                assert!(matches!(bank.kind, FieldUnitKind::Normal{ .. }));
+                assert!(matches!(bank.kind, FieldUnitKind::Normal { .. }));
                 self.do_field_write(bank, Object::Integer(bank_value).wrap())?;
-                region
+                (region, access_width_bits, 0)
             }
-            // FieldUnitKind::Index { ref index, ref data } => {
-            FieldUnitKind::Index { .. } => {
-                // TODO: configure the correct index
-                todo!();
+            FieldUnitKind::Index { index: _, ref data } => {
+                let Object::FieldUnit(ref data) = **data else { panic!() };
+                let FieldUnitKind::Normal { region } = &data.kind else { panic!() };
+                let reg_idx = field.bit_index / 8;
+                (region, access_width_bits /*data.flags.access_type_bytes()? * 8*/, reg_idx)
             }
         };
         let Object::OpRegion(ref read_region) = **read_region else { panic!() };
@@ -2355,7 +2383,27 @@ where
             / access_width_bits;
         let mut read_so_far = 0;
         for i in 0..native_accesses_needed {
-            let aligned_offset = object::align_down(field.bit_index + i * access_width_bits, access_width_bits);
+            // Advance the read pointer. For Index fields, this also means updating the Index
+            // register.
+            let aligned_offset = match field.kind {
+                FieldUnitKind::Normal { .. } | FieldUnitKind::Bank { .. } => {
+                    object::align_down(field.bit_index + i * access_width_bits, access_width_bits)
+                }
+                FieldUnitKind::Index { ref index, ref data } => {
+                    // Update index register
+                    let Object::FieldUnit(ref index) = **index else { panic!() };
+                    let Object::FieldUnit(ref data) = **data else { panic!() };
+                    self.do_field_write(
+                        index,
+                        Object::Integer((index_field_idx + i * (access_width_bits / 8)) as u64).wrap(),
+                    )?;
+
+                    // The offset is always that of the data register, as we always read from the
+                    // base of the data register.
+                    data.bit_index
+                }
+            };
+
             let raw = self.do_native_region_read(read_region, aligned_offset / 8, access_width_bits / 8)?;
             let src_index = if i == 0 { field.bit_index % access_width_bits } else { 0 };
             let remaining_length = field.bit_length - read_so_far;
@@ -2390,17 +2438,26 @@ where
         // TODO: Check that this plays well with the 'preserve' functionality.
         let access_width_bits = field.flags.access_type_bytes()? * 8;
 
-        let write_region = match field.kind {
-            FieldUnitKind::Normal { ref region } => region,
+        // In this tuple:
+        // - write_region is the region that the data will be written to.
+        // - write_field probably not needed, but is the field containing the data
+        // - access_width_bits as above, but may be different for Index fields if the data register
+        //   is narrower than the requested field.
+        // - index_field_idx is the initial index to write into the Index register of an index
+        //   field. For all other field types it is unused and set to zero.
+        let (write_region, access_width_bits, index_field_idx) = match field.kind {
+            FieldUnitKind::Normal { ref region } => (region, access_width_bits, 0),
             FieldUnitKind::Bank { ref region, ref bank, bank_value } => {
                 let Object::FieldUnit(ref bank) = **bank else { panic!() };
-                assert!(matches!(bank.kind, FieldUnitKind::Normal{ .. }));
+                assert!(matches!(bank.kind, FieldUnitKind::Normal { .. }));
                 self.do_field_write(bank, Object::Integer(bank_value).wrap())?;
-                region
+                (region, access_width_bits, 0)
             }
-            FieldUnitKind::Index { .. } => {
-                // TODO: configure the correct index
-                todo!();
+            FieldUnitKind::Index { index: _, ref data } => {
+                let Object::FieldUnit(ref data) = **data else { panic!() };
+                let FieldUnitKind::Normal { region } = &data.kind else { panic!() };
+                let reg_idx = field.bit_index / 8;
+                (region, access_width_bits /* data.flags.access_type_bytes()? * 8 */, reg_idx)
             }
         };
         let Object::OpRegion(ref write_region) = **write_region else { panic!() };
@@ -2416,12 +2473,24 @@ where
 
         for i in 0..native_accesses_needed {
             // Advance the write pointer... For normal and bank fields this is straightforward. For
-            // Index fields, this also involves updating the index register.
+            // Index fields, this involves updating the index register.
             let aligned_offset = match field.kind {
                 FieldUnitKind::Normal { .. } | FieldUnitKind::Bank { .. } => {
                     object::align_down(field.bit_index + i * access_width_bits, access_width_bits)
                 }
-                FieldUnitKind::Index { .. } => todo!(),
+                FieldUnitKind::Index { ref index, ref data } => {
+                    // Update index register
+                    let Object::FieldUnit(ref index) = **index else { panic!() };
+                    let Object::FieldUnit(ref data) = **data else { panic!() };
+                    self.do_field_write(
+                        index,
+                        Object::Integer((index_field_idx + i * (access_width_bits / 8)) as u64).wrap(),
+                    )?;
+
+                    // The offset is always that of the data register, as we always read from the
+                    // base of the data register.
+                    data.bit_index
+                }
             };
             let dst_index = if i == 0 { field.bit_index % access_width_bits } else { 0 };
 

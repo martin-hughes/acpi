@@ -1,9 +1,8 @@
-// Test operations on "normal" fields - those that are not Index or Bank fields.
+// Test operations on "Bank" fields
 
 use aml_test_tools::handlers::{
     check_cmd_handler::AcpiCommands as CheckCommands,
     listed_response_handler::AcpiCommands as Results,
-    null_handler::NullHandler,
     std_test_handler::{Command, construct_std_handler},
 };
 
@@ -11,8 +10,9 @@ mod test_infra;
 
 #[test]
 fn test_basic_bank_store_and_load() {
-    // In this test, the data register has the same width as the fields and all fields are correctly
-    // aligned. We should see single reads and writes for each store operation.
+    // This is a straightforward test of banked fields.
+    // Internally: Apart from setting the bank index beforehand, the field read/write is identical
+    // to normal fields. So this test is probably sufficient testing of banked fields.
     const AML: &str = r#"DefinitionBlock("%FN%", "DSDT", 1, "RSACPI", "BNKFLD", 1) {
     OperationRegion(MEM, SystemMemory, 0x40000, 0x1000)
     Field(MEM, ByteAcc, NoLock, Preserve) {
@@ -59,8 +59,8 @@ fn test_basic_bank_store_and_load() {
         // A = E
         (CheckCommands::WriteU8(0x40000, 1), Results::Skip()), // Select bank 1.
         (CheckCommands::ReadU16(0x40004), Results::ReadU16(0x5AA5)), // Read from E
-        (CheckCommands::WriteU8(0x40000, 0), Results::Skip()), // Select bak 0.
-        (CheckCommands::WriteU16(0x40002, 0x5AA5), Results::Skip()),
+        (CheckCommands::WriteU8(0x40000, 0), Results::Skip()), // Select bank 0.
+        (CheckCommands::WriteU16(0x40002, 0x5AA5), Results::Skip()), // Write the value to A.
     ];
 
     let handler = construct_std_handler(EXPECTED_COMMANDS.to_vec());
