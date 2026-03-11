@@ -1,0 +1,40 @@
+DefinitionBlock ("", "SSDT", 2, "AMD", "AmdTable", 0x00000002)
+{
+    Scope (\_SB)
+    {
+        Name (AGRB, 0xF0000000) //keep
+        Name (ADAT, Buffer (0x0050) //keep
+        {
+            /* 0000 */  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  // ........
+            /* 0008 */  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  // ........
+            /* 0010 */  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  // ........
+            /* 0018 */  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  // ........
+            /* 0020 */  0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x10,  // ........
+            /* 0028 */  0x1F, 0xFF, 0xFF, 0x00, 0x00, 0x03, 0x01, 0x00,  // ........
+            /* 0030 */  0x00, 0x00, 0x00, 0x00, 0x01, 0x01, 0x01, 0x01,  // ........
+            /* 0038 */  0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00,  // ........
+            /* 0040 */  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  // ........
+            /* 0048 */  0x01, 0x01, 0x01, 0x01, 0x00, 0x00, 0x01, 0x00,  // ........
+
+        })
+
+        Device (AWR0)
+        {
+            Name (_HID, EisaId ("PNP0C02") /* PNP Motherboard Resources */)  // _HID: Hardware ID
+            Name (_UID, 0x90)  // _UID: Unique ID
+            Device (ABR0)
+            {
+                Name (_HID, EisaId ("PNP0C02") /* PNP Motherboard Resources */)  // _HID: Hardware ID
+                Name (_UID, 0x80)  // _UID: Unique ID
+                Name (AB12, 0x20) // keep
+                OperationRegion (A053, SystemMemory, (AGRB + ((DerefOf (\_SB.ADAT [(AB12 + 0x0D)]
+                    ) << 0x0F) | (DerefOf (\_SB.ADAT [(AB12 + 0x0E)]) << 0x0C
+                    ))), 0x1000)
+                Field (A053, ByteAcc, NoLock, Preserve)
+                {
+                    Offset (0x18),
+                }
+            }
+        }
+    }
+}

@@ -807,13 +807,17 @@ where
                     }
                     Opcode::DerefOf => {
                         let [Argument::Object(object)] = &op.arguments[..] else { panic!() };
-                        let result = if object.typ() == ObjectType::Reference {
-                            object.clone().unwrap_reference()
+                        let ot2 = object.typ();
+                        let result = if let Object::Reference { kind: _, ref inner } = **object {
+                            inner.clone().unwrap_reference()
                         } else if object.typ() == ObjectType::String {
                             let path = AmlName::from_str(&object.as_string().unwrap())?
                                 .resolve(&context.current_scope)?;
                             self.namespace.lock().get(path)?.clone()
                         } else {
+                            let ot = object.typ();
+                            warn!("Context: DerefOf on non-reference object: {:?}", object);
+                            warn!("Context: Current scope: {:?}", context.current_scope);
                             return Err(AmlError::ObjectNotOfExpectedType {
                                 expected: ObjectType::Reference,
                                 got: object.typ(),
