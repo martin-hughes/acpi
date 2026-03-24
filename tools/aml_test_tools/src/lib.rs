@@ -321,6 +321,8 @@ where
     let result = catch_unwind(AssertUnwindSafe(|| -> Result<(), AmlError> {
         interpreter.load_table(stream)?;
 
+        interpreter.initialize_namespace();
+
         if let Some(result) = interpreter.evaluate_if_present(AmlName::from_str("\\MAIN").unwrap(), vec![])? {
             match *result {
                 Object::Integer(0) => Ok(()),

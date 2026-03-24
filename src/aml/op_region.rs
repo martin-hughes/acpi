@@ -1,3 +1,4 @@
+use pci_types::PciAddress;
 use crate::aml::{AmlError, namespace::AmlName};
 
 #[derive(Clone, Debug)]
@@ -24,7 +25,7 @@ pub trait RegionHandler {
 pub enum RegionSpace {
     SystemMemory,
     SystemIO,
-    PciConfig,
+    PciConfig(Option<PciAddress>),
     EmbeddedControl,
     SmBus,
     SystemCmos,
@@ -41,7 +42,7 @@ impl From<u8> for RegionSpace {
         match value {
             0 => RegionSpace::SystemMemory,
             1 => RegionSpace::SystemIO,
-            2 => RegionSpace::PciConfig,
+            2 => RegionSpace::PciConfig(None),
             3 => RegionSpace::EmbeddedControl,
             4 => RegionSpace::SmBus,
             5 => RegionSpace::SystemCmos,

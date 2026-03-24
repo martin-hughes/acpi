@@ -244,6 +244,29 @@ where
          */
         let mut namespace = self.namespace.lock().clone();
         let init_status = namespace.traverse(|path, level| {
+
+            // Attempt to configure all PCI_Config regions that are children of the current level.
+            level.values.iter().for_each(|(_key, (_flags, obj))| {
+                let token = self.object_token.lock();
+                let o = unsafe { obj.gain_mut(&token) };
+                if let Object::OpRegion(r) = o {
+                    match r.space {
+                        RegionSpace::PciConfig(None) => {
+                            // This address can be updated now/
+                            let address = self.pci_address_for_device(path).unwrap();
+                            r.space = RegionSpace::PciConfig(Some(address));
+                        },
+                        RegionSpace::PciConfig(Some(_)) => {
+                            // error - our assumptions about when PCI_Config regions are initialised
+                            // were wrong. Our expectation is that either at namespace
+                            // initialisation or at method invocation.
+                            panic!("PCI config region already initialized");
+                        }
+                        _ => (), // Don't care
+                    }
+                }
+            });
+
             match level.kind {
                 NamespaceLevelKind::Device
                 | NamespaceLevelKind::Processor
@@ -596,8 +619,19 @@ where
                         let region_offset = region_offset.clone().unwrap_transparent_reference();
                         let region_length = region_length.clone().unwrap_transparent_reference();
 
+                        let space = RegionSpace::from(*region_space);
+                        // If initialisation has probably been completed, calculate the PCI address
+                        // now. Otherwise, wait for namespace initialisation time.
+                        let space = match space {
+                            RegionSpace::PciConfig(_) if context.is_in_method() => {
+                                let address = self.pci_address_for_device(&context.current_scope)?;
+                                RegionSpace::PciConfig(Some(address))
+                            }
+                            _ => space,
+                        };
+
                         let region = Object::OpRegion(OpRegion {
-                            space: RegionSpace::from(*region_space),
+                            space,
                             base: region_offset.as_integer()?,
                             length: region_length.as_integer()?,
                             parent_device_path: context.current_scope.clone(),
@@ -1975,9 +2009,7 @@ where
                 let value = value.trim();
                 let value = value.to_ascii_lowercase();
                 let (value, radix): (&str, u32) = match value.strip_prefix("0x") {
-                    Some(value) => {
-                        (value.split(|c: char| !c.is_ascii_hexdigit()).next().unwrap_or(""), 16)
-                    }
+                    Some(value) => (value.split(|c: char| !c.is_ascii_hexdigit()).next().unwrap_or(""), 16),
                     None => (value.split(|c: char| !c.is_ascii_digit()).next().unwrap_or(""), 10),
                 };
                 match value.len() {
@@ -2527,8 +2559,7 @@ where
                     _ => panic!(),
                 }
             }),
-            RegionSpace::PciConfig => {
-                let address = self.pci_address_for_device(&region.parent_device_path)?;
+            RegionSpace::PciConfig(Some(address)) => {
                 let offset = region.base as u16 + offset as u16;
                 match length {
                     1 => Ok(self.handler.read_pci_u8(address, offset) as u64),
@@ -2536,6 +2567,9 @@ where
                     4 => Ok(self.handler.read_pci_u32(address, offset) as u64),
                     _ => panic!(),
                 }
+            }
+            RegionSpace::PciConfig(None) => {
+                Err(AmlError::NotInitialised)
             }
 
             RegionSpace::EmbeddedControl
@@ -2594,8 +2628,7 @@ where
                 }
                 Ok(())
             }
-            RegionSpace::PciConfig => {
-                let address = self.pci_address_for_device(&region.parent_device_path)?;
+            RegionSpace::PciConfig(Some(address)) => {
                 let offset = region.base as u16 + offset as u16;
                 match length {
                     1 => self.handler.write_pci_u8(address, offset, value as u8),
@@ -2604,6 +2637,9 @@ where
                     _ => panic!(),
                 }
                 Ok(())
+            }
+            RegionSpace::PciConfig(None) => {
+                Err(AmlError::NotInitialised)
             }
 
             RegionSpace::EmbeddedControl
@@ -3144,6 +3180,18 @@ impl MethodContext {
 
         Ok(self.current_block.stream()[self.current_block.pc])
     }
+
+    /// Is the context currently evaluating a method?
+    ///
+    /// This is useful to know because methods are generally evaluated after or during namespace
+    /// initialisation.
+    fn is_in_method(&self) -> bool {
+        if matches!(self.current_block.kind, BlockKind::Method { .. }) {
+            return true;
+        }
+
+        self.block_stack.iter().any(|block| matches!(block.kind, BlockKind::Method { .. }))
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -3345,4 +3393,7 @@ pub enum AmlError {
     /// This variant is set by the host, not by the library, and can be used when it is convenient
     /// not to construct a more complex error type around [`AmlError`].
     HostError(String),
+
+    /// The operation depended on a value that has not been initialised.
+    NotInitialised,
 }
