@@ -16,6 +16,7 @@
  *  - Fuzzing and guarantee panic-free interpretation
  */
 
+mod firmware_lock;
 pub mod namespace;
 pub mod object;
 pub mod op_region;
@@ -28,6 +29,7 @@ use crate::{
     Handle,
     Handler,
     PhysicalMapping,
+    aml::firmware_lock::FirmwareLock,
     platform::AcpiPlatform,
     registers::{FixedRegisters, Pm1ControlBit},
     sdt::{SdtHeader, facs::Facs, fadt::Fadt},
@@ -110,11 +112,8 @@ where
 
     global_lock_mutex: Handle,
     registers: Arc<FixedRegisters<H>>,
-    facs: Option<PhysicalMapping<H, Facs>>,
+    firmware_lock: FirmwareLock<H>,
 }
-
-unsafe impl<H> Send for Interpreter<H> where H: Handler + Send {}
-unsafe impl<H> Sync for Interpreter<H> where H: Handler + Send {}
 
 /// The value returned by the `Revision` opcode.
 const INTERPRETER_REVISION: u64 = 1;
@@ -144,7 +143,7 @@ where
             region_handlers: Spinlock::new(BTreeMap::new()),
             global_lock_mutex,
             registers,
-            facs,
+            firmware_lock: FirmwareLock::new(facs),
         }
     }
 
@@ -327,7 +326,7 @@ where
         // Now we've acquired the AML-side mutex, acquire the hardware side
         // TODO: count the number of times we have to go round this loop / enforce a timeout?
         loop {
-            if self.try_do_acquire_firmware_lock() {
+            if self.firmware_lock.try_do_acquire_firmware_lock() {
                 break Ok(());
             } else {
                 /*
@@ -343,64 +342,12 @@ where
         }
     }
 
-    /// Attempt to acquire the firmware lock, setting the owned bit if the lock is free. If the
-    /// lock is not free, sets the pending bit to instruct the firmware to alert us when we can
-    /// attempt to take ownership of the lock again. Returns `true` if we now have ownership of the
-    /// lock, and `false` if we need to wait for firmware to release it.
-    fn try_do_acquire_firmware_lock(&self) -> bool {
-        let Some(facs) = &self.facs else { return true };
-        loop {
-            let global_lock = facs.global_lock.load(Ordering::Relaxed);
-            let is_owned = global_lock.get_bit(1);
-
-            /*
-             * Compute the new value: either the lock is already owned, and we need to set the
-             * pending bit and wait, or we can acquire ownership of the lock now. Either way, we
-             * unconditionally set the owned bit and set the pending bit if the lock is already
-             * owned.
-             */
-            let mut new_value = global_lock;
-            new_value.set_bit(0, is_owned);
-            new_value.set_bit(1, true);
-
-            if facs
-                .global_lock
-                .compare_exchange(global_lock, new_value, Ordering::AcqRel, Ordering::Acquire)
-                .is_ok()
-            {
-                break !is_owned;
-            }
-        }
-    }
-
     pub fn release_global_lock(&self) -> Result<(), AmlError> {
-        let is_pending = self.do_release_firmware_lock();
+        let is_pending = self.firmware_lock.do_release_firmware_lock();
         if is_pending {
             self.registers.pm1_control_registers.set_bit(Pm1ControlBit::GlobalLockRelease, true).unwrap();
         }
         Ok(())
-    }
-
-    /// Atomically release the owned and pending bits of the global lock. Returns whether the
-    /// pending bit was set (this means the firmware is waiting to acquire the lock, and should be
-    /// informed we're finished with it).
-    fn do_release_firmware_lock(&self) -> bool {
-        let Some(facs) = &self.facs else { return false };
-        loop {
-            let global_lock = facs.global_lock.load(Ordering::Relaxed);
-            let is_pending = global_lock.get_bit(0);
-            let mut new_value = global_lock;
-            new_value.set_bit(0, false);
-            new_value.set_bit(1, false);
-
-            if facs
-                .global_lock
-                .compare_exchange(global_lock, new_value, Ordering::AcqRel, Ordering::Acquire)
-                .is_ok()
-            {
-                break is_pending;
-            }
-        }
     }
 
     fn do_execute_method(&self, mut context: MethodContext) -> Result<WrappedObject, AmlError> {
