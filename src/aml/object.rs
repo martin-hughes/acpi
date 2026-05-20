@@ -154,6 +154,12 @@ impl WrappedObject {
     }
 }
 
+// TODO: (SAFETY) WrappedObject is intended to be safely Send, but it relies on the user using the
+// Interpreter's ObjectToken correctly.
+//
+// Ideally we'd make WrappedObject naturally Send, and that may be an outcome of #300.
+unsafe impl Send for WrappedObject {}
+
 impl ops::Deref for WrappedObject {
     type Target = Object;
 

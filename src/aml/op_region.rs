@@ -8,7 +8,7 @@ pub struct OpRegion {
     pub parent_device_path: AmlName,
 }
 
-pub trait RegionHandler {
+pub trait RegionHandler: Send + Sync {
     fn read_u8(&self, region: &OpRegion) -> Result<u8, AmlError>;
     fn read_u16(&self, region: &OpRegion) -> Result<u16, AmlError>;
     fn read_u32(&self, region: &OpRegion) -> Result<u32, AmlError>;

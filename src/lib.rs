@@ -343,6 +343,7 @@ where
 }
 
 unsafe impl<H: Handler + Send, T: Send> Send for PhysicalMapping<H, T> {}
+unsafe impl<H: Handler + Sync, T: Sync> Sync for PhysicalMapping<H, T> {}
 
 impl<H, T> Deref for PhysicalMapping<H, T>
 where
