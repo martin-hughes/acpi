@@ -3,13 +3,13 @@ members = ["tools/aml_tester", "tools/acpi_dumper", "tools/aml_test_tools", "too
 resolver = "2"
 
 [package]
-name = "acpi"
-version = "6.1.1"
-authors = ["Isaac Woods"]
-repository = "https://github.com/rust-osdev/acpi"
-description = "A pure-Rust library for interacting with ACPI"
+name = "mh-acpi"
+version = "0.0.1"
+authors = ["Martin Hughes", "Isaac Woods"]
+repository = "https://github.com/martin-hughes/acpi"
+description = "Forked from Isaac Woods' pure-Rust library for interacting with ACPI"
 categories = ["hardware-support", "no-std"]
-license = "MIT/Apache-2.0"
+license = "MIT OR Apache-2.0"
 edition = "2024"
 
 [dependencies]
@@ -17,7 +17,7 @@ bit_field = "0.10.2"
 bitflags = "2.5.0"
 log = "0.4.20"
 spinning_top = "0.3.0"
-pci_types = { version = "0.10.0", public = true }
+pci_types = "0.10.0"
 byteorder = { version = "1.5.0", default-features = false }
 
 [dev-dependencies]

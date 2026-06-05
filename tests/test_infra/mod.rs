@@ -1,4 +1,4 @@
-use acpi::Handler;
+use mh_acpi::Handler;
 use aml_test_tools::{RunTestResult, TestResult, handlers::logging_handler::LoggingHandler, new_interpreter, run_test_for_string, run_test_for_opcodes};
 
 // The following two functions are very similar in structure, but whilst there are only two of them

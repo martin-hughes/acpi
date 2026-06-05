@@ -6,7 +6,7 @@ edition = "2024"
 publish = false
 
 [dependencies]
-acpi = { path = "../.." }
+acpi = { path = "../..", package = "mh-acpi" }
 log = "0.4"
 pci_types = "0.10.0"
 tempfile = "3.26.0"
