@@ -475,7 +475,6 @@ where
                             })?,
                         };
 
-                        drop(operand_write);
                         context.contribute_arg(Argument::Object(Object::Integer(new_value).wrap()));
                         context.retire_op(op);
                     }
@@ -566,7 +565,6 @@ where
                                 typ: sync_read.typ(),
                             });
                         };
-                        drop(sync_read);
 
                         {
                             /*
@@ -685,7 +683,8 @@ where
                             Argument::PkgLength(pkg_length),
                             Argument::Object(buffer_size),
                         ]);
-                        let buffer_size = buffer_size.clone().unwrap_transparent_reference().read().as_integer()?;
+                        let buffer_size =
+                            buffer_size.clone().unwrap_transparent_reference().read().as_integer()?;
 
                         let buffer_len = pkg_length - (context.current_block.pc - start_pc);
                         let mut buffer = vec![0; buffer_size as usize];
@@ -916,7 +915,10 @@ where
                         let mutex_handle = {
                             let mutex_read = mutex.read();
                             let Object::Mutex { mutex: handle, sync_level: _ } = &*mutex_read else {
-                                return Err(AmlError::InvalidOperationOnObject { op: Operation::Acquire, typ: mutex_read.typ() });
+                                return Err(AmlError::InvalidOperationOnObject {
+                                    op: Operation::Acquire,
+                                    typ: mutex_read.typ(),
+                                });
                             };
                             *handle
                         };
@@ -936,7 +938,10 @@ where
                         let mutex_handle = {
                             let mutex_read = mutex.read();
                             let Object::Mutex { mutex: handle, sync_level: _ } = &*mutex_read else {
-                                return Err(AmlError::InvalidOperationOnObject { op: Operation::Release, typ: mutex_read.typ() });
+                                return Err(AmlError::InvalidOperationOnObject {
+                                    op: Operation::Release,
+                                    typ: mutex_read.typ(),
+                                });
                             };
                             *handle
                         };
@@ -1163,9 +1168,12 @@ where
                                     let Argument::Object(total_elements) = &package_op.arguments[0] else {
                                         panic!()
                                     };
-                                    let total_elements =
-                                        total_elements.clone().unwrap_transparent_reference().read().as_integer()?
-                                            as usize;
+                                    let total_elements = total_elements
+                                        .clone()
+                                        .unwrap_transparent_reference()
+                                        .read()
+                                        .as_integer()?
+                                        as usize;
 
                                     // Update the expected number of arguments to terminate the in-flight op
                                     package_op.expected_arguments = package_op.arguments.len();
@@ -1648,8 +1656,8 @@ where
                             match object {
                                 Ok((resolved_name, object)) => {
                                     let obj_read = object.read();
-                                    if let Object::Method { flags, .. }
-                                    | Object::NativeMethod { flags, .. } = &*obj_read
+                                    if let Object::Method { flags, .. } | Object::NativeMethod { flags, .. } =
+                                        &*obj_read
                                     {
                                         let flags = *flags;
                                         drop(obj_read);
@@ -2029,7 +2037,9 @@ where
                     Object::Buffer(right_read.to_buffer(self.integer_size)?)
                 }
             }
-            _ => return Err(AmlError::InvalidOperationOnObject { op: Operation::LogicalOp, typ: left_read.typ() }),
+            _ => {
+                return Err(AmlError::InvalidOperationOnObject { op: Operation::LogicalOp, typ: left_read.typ() });
+            }
         };
 
         let ordering = left_read.aml_cmp(&right_obj);
@@ -2075,7 +2085,12 @@ where
                     Object::Buffer(bytes)
                 }
             }
-            _ => return Err(AmlError::InvalidOperationOnObject { op: Operation::ToBuffer, typ: operand_read.typ() }),
+            _ => {
+                return Err(AmlError::InvalidOperationOnObject {
+                    op: Operation::ToBuffer,
+                    typ: operand_read.typ(),
+                });
+            }
         }
         .wrap();
 
@@ -2157,7 +2172,12 @@ where
                     Object::String(string)
                 }
             }
-            _ => return Err(AmlError::InvalidOperationOnObject { op: Operation::ToDecOrHexString, typ: operand_read.typ() }),
+            _ => {
+                return Err(AmlError::InvalidOperationOnObject {
+                    op: Operation::ToDecOrHexString,
+                    typ: operand_read.typ(),
+                });
+            }
         }
         .wrap();
 
@@ -2194,7 +2214,9 @@ where
                         Object::Buffer(bytes.to_vec())
                     }
                 }
-                _ => return Err(AmlError::InvalidOperationOnObject { op: Operation::Mid, typ: source_read.typ() }),
+                _ => {
+                    return Err(AmlError::InvalidOperationOnObject { op: Operation::Mid, typ: source_read.typ() });
+                }
             }
         }
         .wrap();
@@ -2252,9 +2274,7 @@ where
                 Object::Buffer(buffer).wrap()
             }
             ObjectType::Buffer => {
-                let s1_read = source1.read();
-                let mut buffer = s1_read.as_buffer()?.to_vec();
-                drop(s1_read);
+                let mut buffer = source1.read().as_buffer()?.to_vec();
                 buffer.extend(source2.read().to_buffer(self.integer_size)?);
                 Object::Buffer(buffer).wrap()
             }
@@ -2634,11 +2654,14 @@ where
         let value_bytes: &[u8] = match &*value_read {
             Object::Integer(v) => &v.to_le_bytes() as &[u8],
             Object::Buffer(bytes) => bytes,
-            _ => return Err(AmlError::ObjectNotOfExpectedType { expected: ObjectType::Integer, got: value_read.typ() }),
+            _ => {
+                return Err(AmlError::ObjectNotOfExpectedType {
+                    expected: ObjectType::Integer,
+                    got: value_read.typ(),
+                });
+            }
         };
-        // value_bytes borrows from value_read, keep it alive.
         let value_bytes: alloc::vec::Vec<u8> = value_bytes.to_vec();
-        drop(value_read);
 
         let access_width_bits = field.flags.access_type_bytes()? * 8;
 
