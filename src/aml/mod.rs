@@ -2518,7 +2518,6 @@ where
                 if let Object::Reference { inner: inner_inner, .. } = &*inner_read {
                     inner_inner.clone()
                 } else {
-                    drop(inner_read);
                     inner.clone().unwrap_transparent_reference()
                 }
             }
