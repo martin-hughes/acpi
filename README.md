@@ -1,10 +1,11 @@
 # Acpi
+
 ![Build Status](https://github.com/martin-hughes/acpi/actions/workflows/build.yml/badge.svg)
 [![Version](https://img.shields.io/crates/v/mh-acpi.svg?style=rounded-square)](https://crates.io/crates/mh-acpi/)
 
 ## What is this crate?
 
-This is my fork of Isaac Woods' [acpi](https://github.com/acpi-rs/acpi) crate. It exists to allow 
+This is my fork of Isaac Woods' [acpi](https://github.com/acpi-rs/acpi) crate. It exists to allow
 me to test my fixes and try out other ways I want to modify the code.
 
 The licence remains the same.
@@ -30,6 +31,12 @@ acpi = { package = "mh-acpi", version = "0.0.1" }
 Please feel free to contribute as much as you feel comfortable - I welcome all contributions,
 including issues, PRs, PR reviews, or comments on anything you see.
 
+### Git History
+
+For the time being, I'd like to be able to use the upstream `acpi` code as much as possible. For
+that reason, there *may* not be a linear Git history between adjacent version numbers. It depends
+on how I choose to merge upstream changes to this repo.
+
 ---
 > Below this point the documentation is from the original crate.
 
@@ -54,7 +61,9 @@ of the [ACPI Specification](https://uefi.org/specifications) too (however, be aw
 ships with ACPI tables that are not spec-compliant).
 
 ## Licence
+
 This project is dual-licensed under:
+
 - Apache Licence, Version 2.0 ([LICENCE-APACHE](LICENCE-APACHE) or http://www.apache.org/licenses/LICENSE-2.0)
 - MIT license ([LICENCE-MIT](LICENCE-MIT) or http://opensource.org/licenses/MIT)
 
