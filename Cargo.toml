@@ -4,7 +4,7 @@ resolver = "2"
 
 [package]
 name = "mh-acpi"
-version = "0.0.2"
+version = "0.0.3"
 authors = ["Martin Hughes", "Isaac Woods"]
 repository = "https://github.com/martin-hughes/acpi"
 description = "Forked from Isaac Woods' pure-Rust library for interacting with ACPI"

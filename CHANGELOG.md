@@ -1,5 +1,11 @@
 # Version History
 
+## 0.0.3
+
+* Fix [upstream issue 300](https://github.com/rust-osdev/acpi/issues/300) in `do_copy_object`
+
+No breaking changes.
+
 ## 0.0.2
 
 Makes WrappedObject genuinely Send + Sync by replacing `UnsafeCell` with a read-writer lock.
