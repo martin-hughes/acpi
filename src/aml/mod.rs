@@ -2318,16 +2318,20 @@ where
                     ReferenceKind::Named => (inner.clone().unwrap_reference(), false),
                     ReferenceKind::Local | ReferenceKind::Index => {
                         if let Object::Reference { kind: _, inner: ref inner_inner } = **inner {
-                            (inner_inner.clone(), false)
+                            (inner_inner.clone().unwrap_reference(), false)
                         } else {
-                            (inner.clone().unwrap_transparent_reference(), true)
+                            (inner.clone().unwrap_reference(), true)
                         }
                     }
                     ReferenceKind::Arg => {
                         if let Object::Reference { kind: _, inner: ref inner_inner } = **inner {
-                            (inner_inner.clone(), true)
+                            if inner.is_true_reference() {
+                                (inner_inner.clone().unwrap_reference(), true)
+                            } else {
+                                (inner.clone(), true)
+                            }
                         } else {
-                            (inner.clone().unwrap_transparent_reference(), true)
+                            (inner.clone().unwrap_reference(), true)
                         }
                     }
                     ReferenceKind::RefOf | ReferenceKind::Unresolved => {

@@ -374,6 +374,15 @@ impl Object {
             _ => Err(AmlError::InvalidOperationOnObject { op: Operation::LogicalOp, typ: self.typ() }),
         }
     }
+
+    pub fn is_true_reference(&self) -> bool {
+        match self {
+            Object::Reference { kind, .. } => {
+                !matches!(kind, ReferenceKind::Local | ReferenceKind::Arg | ReferenceKind::Named)
+            }
+            _ => false,
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
