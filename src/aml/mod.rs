@@ -684,11 +684,17 @@ where
                             Argument::Object(buffer_size),
                         ]);
                         let buffer_size =
-                            buffer_size.clone().unwrap_transparent_reference().read().as_integer()?;
+                            buffer_size.clone().unwrap_transparent_reference().read().as_integer()? as usize;
 
                         let buffer_len = pkg_length - (context.current_block.pc - start_pc);
-                        let mut buffer = vec![0; buffer_size as usize];
-                        buffer[0..buffer_len].copy_from_slice(
+                        let mut buffer = vec![0; buffer_size];
+
+                        /*
+                         * Copy the supplied elements into the buffer, avoiding a pathological case
+                         * where more elements are supplied than the buffer's size
+                         */
+                        let to_copy = usize::min(buffer_size, buffer_len);
+                        buffer[0..to_copy].copy_from_slice(
                             &context.current_block.stream()
                                 [context.current_block.pc..(context.current_block.pc + buffer_len)],
                         );
@@ -3098,11 +3104,8 @@ impl MethodContext {
             if args.len() != flags.arg_count() {
                 return Err(AmlError::MethodArgCountIncorrect);
             }
-            let block = Block {
-                stream: code.clone(),
-                pc: 0,
-                kind: BlockKind::Method { method_scope: scope.clone() },
-            };
+            let block =
+                Block { stream: code.clone(), pc: 0, kind: BlockKind::Method { method_scope: scope.clone() } };
             let args = core::array::from_fn(|i| {
                 if let Some(arg) = args.get(i) { arg.clone() } else { Object::Uninitialized.wrap() }
             });
