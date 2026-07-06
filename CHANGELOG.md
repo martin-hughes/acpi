@@ -2,6 +2,7 @@
 
 ## 0.0.3
 
+* Merge upstream as far as `daf6df9`
 * Fix [upstream issue 300](https://github.com/rust-osdev/acpi/issues/300) in `do_copy_object`
 
 No breaking changes.
