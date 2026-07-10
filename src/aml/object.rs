@@ -268,7 +268,8 @@ impl Object {
     pub fn write_buffer_field(&mut self, value: &[u8]) -> Result<(), AmlError> {
         // TODO: bounds check the buffer first to avoid panicking
         if let Self::BufferField { buffer, offset, length } = self {
-            let mut buffer_write = buffer.unwrap_transparent_reference().write();
+            let buffer = buffer.clone().unwrap_transparent_reference();
+            let mut buffer_write = buffer.write();
             let buffer = match &mut *buffer_write {
                 Object::Buffer(buffer) => buffer.as_mut_slice(),
                 // XXX: this unfortunately requires us to trust AML to keep the string as valid
