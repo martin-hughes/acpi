@@ -31,7 +31,7 @@ fn sys_exit(status: i32) -> ! {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn _start() -> ! {
-    use ::acpi::{AcpiTables, sdt::madt::Madt};
+    use ::mh_acpi::{AcpiTables, sdt::madt::Madt};
 
     // Clearly actually executing this will result in an access violation. The point is to check that it compiles.
     let tables = unsafe { AcpiTables::from_rsdp(NullHandler {}, 0xd1e as usize) }

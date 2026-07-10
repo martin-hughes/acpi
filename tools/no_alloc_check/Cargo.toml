@@ -11,5 +11,5 @@ panic = "abort"
 panic = "abort"
 
 [dependencies]
-acpi = { path = "../..", default-features = false }
+mh-acpi = { path = "../..", default-features = false }
 pci_types = "0.10.1"

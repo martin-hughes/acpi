@@ -3,7 +3,7 @@
 //! This is pretty much a duplicate of [`aml_test_utils::NullHandler`]. We don't use that version
 //! because `aml_test_tools` is not a `no_std` crate, which we need for this executable.
 
-use acpi::{Handler, PhysicalMapping};
+use mh_acpi::{Handler, PhysicalMapping};
 use pci_types::PciAddress;
 
 #[derive(Clone)]
