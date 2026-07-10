@@ -244,7 +244,12 @@ impl Object {
             let buffer = match &*buffer_read {
                 Object::Buffer(buffer) => buffer.as_slice(),
                 Object::String(string) => string.as_bytes(),
-                _ => panic!(),
+                typ => {
+                    return Err(AmlError::InvalidOperationOnObject {
+                        op: Operation::ReadBufferField,
+                        typ: typ.typ(),
+                    });
+                }
             };
             if *length <= integer_size as usize {
                 let mut dst = [0u8; 8];
@@ -263,13 +268,18 @@ impl Object {
     pub fn write_buffer_field(&mut self, value: &[u8]) -> Result<(), AmlError> {
         // TODO: bounds check the buffer first to avoid panicking
         if let Self::BufferField { buffer, offset, length } = self {
-            let mut buffer_write = buffer.write();
+            let mut buffer_write = buffer.unwrap_transparent_reference().write();
             let buffer = match &mut *buffer_write {
                 Object::Buffer(buffer) => buffer.as_mut_slice(),
                 // XXX: this unfortunately requires us to trust AML to keep the string as valid
                 // UTF8... maybe there is a better way?
                 Object::String(string) => unsafe { string.as_bytes_mut() },
-                _ => panic!(),
+                typ => {
+                    return Err(AmlError::InvalidOperationOnObject {
+                        op: Operation::WriteBufferField,
+                        typ: typ.typ(),
+                    });
+                }
             };
             copy_bits(value, 0, buffer, *offset, *length);
             Ok(())

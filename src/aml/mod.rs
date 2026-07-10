@@ -860,24 +860,21 @@ where
                     }
                     Opcode::DerefOf => {
                         extract_args!(op => [Argument::Object(object)]);
+                        let object = object.clone().unwrap_reference();
                         let obj_read = object.read();
                         let result = match &*obj_read {
-                            Object::Reference { .. } => {
-                                drop(obj_read);
-                                object.clone().unwrap_reference()
-                            }
+                            Object::BufferField { .. } => obj_read.read_buffer_field(self.integer_size)?.wrap(),
+                            Object::FieldUnit(field) => self.do_field_read(field)?,
                             Object::String(_) => {
                                 let path = AmlName::from_str(&obj_read.as_string().unwrap())?;
                                 drop(obj_read);
                                 let (_, object) = self.namespace.lock().search(&path, &context.current_scope)?;
                                 object.clone()
+                            },
+                            Object::Reference { .. } => {
+                                unreachable!();
                             }
-                            _ => {
-                                return Err(AmlError::ObjectNotOfExpectedType {
-                                    expected: ObjectType::Reference,
-                                    got: obj_read.typ(),
-                                });
-                            }
+                            _ => object.clone()
                         };
                         context.contribute_arg(Argument::Object(result));
                         context.retire_op(op);
@@ -1745,7 +1742,7 @@ where
                 Opcode::FindSetLeftBit | Opcode::FindSetRightBit => {
                     context.start(OpInFlight::new(opcode, &[ResolveBehaviour::TermArg, ResolveBehaviour::Target]))
                 }
-                Opcode::DerefOf => context.start(OpInFlight::new(opcode, &[ResolveBehaviour::TermArg])),
+                Opcode::DerefOf => context.start(OpInFlight::new(opcode, &[ResolveBehaviour::SuperName])),
                 Opcode::ConcatRes => context.start(OpInFlight::new(
                     opcode,
                     &[ResolveBehaviour::TermArg, ResolveBehaviour::TermArg, ResolveBehaviour::Target],
