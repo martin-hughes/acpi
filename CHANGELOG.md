@@ -4,6 +4,11 @@
 
 * Merge upstream as far as `daf6df9`
 * Fix [upstream issue 300](https://github.com/rust-osdev/acpi/issues/300) in `do_copy_object`
+* Add no-alloc compilation tests [upstream issue 311](https://github.com/rust-osdev/acpi/issues/311)
+* Merge [`ArthurHeymans/UnsupportedCsr`](https://github.com/ArthurHeymans/acpi/tree/UnsupportedCsr).
+  * Note that this actually contains two upstream pull requests
+    [#316](https://github.com/rust-osdev/acpi/pull/316) and
+    [#317](https://github.com/rust-osdev/acpi/pull/317)
 
 No breaking changes.
 

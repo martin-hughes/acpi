@@ -7,7 +7,10 @@ use alloc::{
 };
 use bit_field::BitField;
 use core::{cmp::Ordering, fmt, sync::atomic::AtomicU64};
-use spinning_top::{RwSpinlock, guard::{RwSpinlockReadGuard, RwSpinlockWriteGuard}};
+use spinning_top::{
+    RwSpinlock,
+    guard::{RwSpinlockReadGuard, RwSpinlockWriteGuard},
+};
 
 type NativeMethod = dyn Fn(&[WrappedObject]) -> Result<WrappedObject, AmlError> + Send + Sync;
 
@@ -132,7 +135,9 @@ impl WrappedObject {
             let inner = {
                 let read = object.read();
                 if let Object::Reference { kind, inner } = &*read
-                    && (*kind == ReferenceKind::Local || *kind == ReferenceKind::Arg || *kind == ReferenceKind::Named)
+                    && (*kind == ReferenceKind::Local
+                        || *kind == ReferenceKind::Arg
+                        || *kind == ReferenceKind::Named)
                 {
                     Some(inner.clone())
                 } else {
@@ -240,6 +245,7 @@ impl Object {
 
     pub fn read_buffer_field(&self, integer_size: IntegerSize) -> Result<Object, AmlError> {
         if let Self::BufferField { buffer, offset, length } = self {
+            let buffer = buffer.clone().unwrap_transparent_reference();
             let buffer_read = buffer.read();
             let buffer = match &*buffer_read {
                 Object::Buffer(buffer) => buffer.as_slice(),

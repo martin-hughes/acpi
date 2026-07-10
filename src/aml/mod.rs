@@ -870,11 +870,11 @@ where
                                 drop(obj_read);
                                 let (_, object) = self.namespace.lock().search(&path, &context.current_scope)?;
                                 object.clone()
-                            },
+                            }
                             Object::Reference { .. } => {
                                 unreachable!();
                             }
-                            _ => object.clone()
+                            _ => object.clone(),
                         };
                         context.contribute_arg(Argument::Object(result));
                         context.retire_op(op);
