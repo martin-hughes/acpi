@@ -60,7 +60,10 @@ pub fn resource_descriptor_list(descriptor: WrappedObject) -> Result<Vec<Resourc
     }
 }
 
-fn unsupported_resource_descriptor_name(descriptors: &[(u8, &'static str)], descriptor_type: u8) -> Option<&'static str> {
+fn unsupported_resource_descriptor_name(
+    descriptors: &[(u8, &'static str)],
+    descriptor_type: u8,
+) -> Option<&'static str> {
     descriptors.iter().find_map(|(typ, name)| (*typ == descriptor_type).then_some(*name))
 }
 
@@ -120,7 +123,8 @@ fn resource_descriptor(bytes: &[u8]) -> Result<(Option<Resource>, &[u8]), AmlErr
             0x80..=0xff => unreachable!(),
             _ => {
                 let descriptor_name =
-                    unsupported_resource_descriptor_name(UNSUPPORTED_LARGE_RESOURCE_DESCRIPTORS, descriptor_type).unwrap();
+                    unsupported_resource_descriptor_name(UNSUPPORTED_LARGE_RESOURCE_DESCRIPTORS, descriptor_type)
+                        .unwrap();
                 return skip_unsupported_resource("large", descriptor_type, descriptor_name, remaining_bytes);
             }
         }?;
@@ -162,7 +166,8 @@ fn resource_descriptor(bytes: &[u8]) -> Result<(Option<Resource>, &[u8]), AmlErr
             0x10..=0xFF => unreachable!(),
             _ => {
                 let descriptor_name =
-                    unsupported_resource_descriptor_name(UNSUPPORTED_SMALL_RESOURCE_DESCRIPTORS, descriptor_type).unwrap();
+                    unsupported_resource_descriptor_name(UNSUPPORTED_SMALL_RESOURCE_DESCRIPTORS, descriptor_type)
+                        .unwrap();
                 return skip_unsupported_resource("small", descriptor_type, descriptor_name, remaining_bytes);
             }
         }?;
@@ -792,12 +797,33 @@ mod tests {
     #[test]
     fn skips_unsupported_large_resource_descriptors() {
         let bytes: Vec<u8> = [
-            // GenericSerialBus descriptor with one byte of payload.
-            0x8e, 0x01, 0x00, 0x00,
-            // Memory32Fixed(ReadWrite, 0x1000, 0x1000)
-            0x86, 0x09, 0x00, 0x01, 0x00, 0x10, 0x00, 0x00, 0x00, 0x10, 0x00, 0x00,
-            // End tag.
-            0x79, 0x00,
+            0x8e, 0x01, 0x00, 0x00, // GenericSerialBus descriptor with one byte of payload.
+            0x86, 0x09, 0x00, 0x01, 0x00, 0x10, 0x00, 0x00, 0x00, 0x10, 0x00,
+            0x00, // Memory32Fixed(ReadWrite, 0x1000, 0x1000)
+            0x79, 0x00, // End tag.
+        ]
+        .to_vec();
+
+        let value = Object::Buffer(bytes).wrap();
+        let resources = resource_descriptor_list(value).unwrap();
+
+        assert_eq!(
+            resources,
+            Vec::from([Resource::MemoryRange(MemoryRangeDescriptor::FixedLocation {
+                is_writable: true,
+                base_address: 0x1000,
+                range_length: 0x1000,
+            })])
+        );
+    }
+
+    #[test]
+    fn skips_unsupported_small_resource_descriptors() {
+        let bytes: Vec<u8> = [
+            0x71, 0x00, // Vendor-defined small descriptor with one byte of payload.
+            0x86, 0x09, 0x00, 0x01, 0x00, 0x10, 0x00, 0x00, 0x00, 0x10, 0x00,
+            0x00, // Memory32Fixed(ReadWrite, 0x1000, 0x1000)
+            0x79, 0x00, // End tag.
         ]
         .to_vec();
 

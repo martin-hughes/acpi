@@ -2,7 +2,7 @@
 
 ## 0.0.4
 
-* Merge upstream as far as `7c7a89d`.
+* Merge upstream as far as `f6e5b14`.
 
 No breaking changes.
 
