@@ -1,5 +1,11 @@
 # Version History
 
+## 0.0.4
+
+* Merge upstream as far as `7c7a89d`.
+
+No breaking changes.
+
 ## 0.0.3
 
 * Merge upstream as far as `daf6df9`

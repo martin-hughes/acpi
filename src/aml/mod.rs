@@ -1742,6 +1742,8 @@ where
                 Opcode::FindSetLeftBit | Opcode::FindSetRightBit => {
                     context.start(OpInFlight::new(opcode, &[ResolveBehaviour::TermArg, ResolveBehaviour::Target]))
                 }
+                // Resolve as a SuperName so BufferField and FieldUnit objects are not read eagerly
+                // as TermArgs; DerefOf handles those reads itself when executing the opcode.
                 Opcode::DerefOf => context.start(OpInFlight::new(opcode, &[ResolveBehaviour::SuperName])),
                 Opcode::ConcatRes => context.start(OpInFlight::new(
                     opcode,
