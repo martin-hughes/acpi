@@ -1,4 +1,4 @@
-use acpi::{
+use mh_acpi::{
     Handler,
     aml::{Interpreter, namespace::AmlName, object::Object},
 };

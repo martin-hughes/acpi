@@ -2,7 +2,38 @@
 ![Build Status](https://github.com/rust-osdev/acpi/actions/workflows/build.yml/badge.svg)
 [![Version](https://img.shields.io/crates/v/acpi.svg?style=rounded-square)](https://crates.io/crates/acpi/)
 
-### [Documentation](https://docs.rs/acpi)
+## What is this crate?
+
+This is my fork of Isaac Woods' [acpi](https://github.com/acpi-rs/acpi) crate. It exists to allow
+me to test my fixes and try out other ways I want to modify the code.
+
+The licence remains the same.
+
+### Version numbers
+
+The original crate is (at the time of writing) up to v6.1.1. Since it's likely I'll be making
+various incompatible changes, I'm starting again from v0.0.1 - so for now, consider each version
+to be incompatible with the previous.
+
+### Using this crate
+
+Whilst it remains compatible with the original, add something like this to your `Cargo.toml`. This
+will avoid the need to rename all your existing uses of `acpi`.
+
+```toml
+[dependencies]
+acpi = { package = "mh-acpi", version = "0.0.1" }  
+```
+
+### Contributing
+
+Please feel free to contribute as much as you feel comfortable - I welcome all contributions,
+including issues, PRs, PR reviews, or comments on anything you see.
+
+---
+> Below this point the documentation is from the original crate.
+
+## [Documentation](https://docs.rs/acpi)
 
 `acpi` is a Rust library for interacting with the Advanced Configuration and Power Interface, a
 complex framework for power management and device discovery and configuration. ACPI is used on

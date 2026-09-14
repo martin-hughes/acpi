@@ -5,7 +5,7 @@ authors = ["Isaac Woods"]
 edition = "2018"
 
 [dependencies]
-acpi = { path = "../.." }
+acpi = { path = "../..", package = "mh-acpi", public = true }
 aml-test-tools = { path = "../aml-test-tools" }
 clap = "4"
 colored = "3.1.1"

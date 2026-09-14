@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-use acpi::{
+use mh_acpi::{
     Handle,
     aml::{
         AmlError,
