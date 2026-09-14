@@ -2,8 +2,9 @@
 
 ## 0.0.5
 
-* Revert to upstream-main. The only effect of this is to lose the change in v0.0.2 - this was unlikely to ever make it
-  to upstream
+* Revert to upstream-main revision 415c627. The only effect of this is to lose the change in v0.0.2 - this was unlikely
+  to ever make it to upstream.
+* Merge branches `prevent-infinite-recursion` and `i313-store-refs`
 
 ## 0.0.4
 

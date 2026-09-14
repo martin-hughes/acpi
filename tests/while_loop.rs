@@ -1,5 +1,5 @@
 mod test_infra;
-use acpi::aml::AmlError;
+use mh_acpi::aml::AmlError;
 use aml_test_tools::{
     RunTestResult,
     TestFailureReason,
