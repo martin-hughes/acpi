@@ -24,7 +24,7 @@ use log::{error, trace};
 use std::{
     cell::SyncUnsafeCell,
     ffi::OsStr,
-    fmt::Debug,
+    fmt::{Debug, Formatter},
     fs::File,
     io::{Read, Write},
     panic::{AssertUnwindSafe, catch_unwind},
@@ -50,6 +50,19 @@ where
 
     /// The test failed, and the interpreter is no longer valid.
     Panicked,
+}
+
+impl<T> std::fmt::Debug for RunTestResult<T>
+where
+    T: Handler,
+{
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            RunTestResult::Pass(_) => "Pass",
+            RunTestResult::Failed(_, _) => "Failed",
+            RunTestResult::Panicked => "Panicked",
+        })
+    }
 }
 
 /// The result of a test
