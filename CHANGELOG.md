@@ -1,5 +1,11 @@
 # Version History
 
+## 0.0.6
+
+* Update to upstream-main revision 147973c.
+* Merge branch `safer-physical-mapping`, which has some changes to the interface of `PhysicalMapping` and
+  `RawPhysicalMapping`
+
 ## 0.0.5
 
 * Revert to upstream-main revision 415c627. The only effect of this is to lose the change in v0.0.2 - this was unlikely
