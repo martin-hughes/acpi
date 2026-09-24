@@ -9,9 +9,10 @@ use crate::{
     AcpiError,
     AcpiTables,
     Handler,
+    PhysicalMapping,
     PowerProfile,
     address::GenericAddress,
-    registers::{FixedRegisters, Pm1ControlBit, Pm1Event},
+    registers::{FixedRegisters, Pm1ControlBit, Pm1EventFlags},
     sdt::{
         Signature,
         fadt::Fadt,
@@ -82,15 +83,9 @@ impl<H: Handler, A: Allocator + Clone> AcpiPlatform<H, A> {
     /// Initializes the event registers, masking all events to start.
     pub fn initialize_events(&self) -> Result<(), AcpiError> {
         /*
-         * Disable all fixed events to start.
+         * Disable all fixed event interrupts to start, including the global flag.
          */
-        self.registers.pm1_event_registers.set_event_enabled(Pm1Event::Timer, false)?;
-        self.registers.pm1_event_registers.set_event_enabled(Pm1Event::GlobalLock, false)?;
-        self.registers.pm1_event_registers.set_event_enabled(Pm1Event::PowerButton, false)?;
-        self.registers.pm1_event_registers.set_event_enabled(Pm1Event::SleepButton, false)?;
-        self.registers.pm1_event_registers.set_event_enabled(Pm1Event::Rtc, false)?;
-        self.registers.pm1_event_registers.set_event_enabled(Pm1Event::PciEWake, false)?;
-        self.registers.pm1_event_registers.set_event_enabled(Pm1Event::Wake, false)?;
+        self.registers.pm1_event_registers.set_enable_flags(Pm1EventFlags::empty());
 
         // TODO: deal with GPEs
 
@@ -155,9 +150,10 @@ impl<H: Handler, A: Allocator + Clone> AcpiPlatform<H, A> {
         let Some(madt) = self.tables.find_table::<Madt>() else { Err(AcpiError::TableNotFound(Signature::MADT))? };
         let mailbox_addr = madt.get().get_mpwk_mailbox_addr()?;
         let mut mpwk_mapping = unsafe {
-            self.handler.map_physical_region::<MultiprocessorWakeupMailbox>(
+            PhysicalMapping::<_, MultiprocessorWakeupMailbox>::new(
                 mailbox_addr as usize,
                 mem::size_of::<MultiprocessorWakeupMailbox>(),
+                &self.handler,
             )
         };
 

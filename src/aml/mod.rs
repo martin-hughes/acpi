@@ -16,6 +16,7 @@
  *  - Fuzzing and guarantee panic-free interpretation
  */
 
+mod interrupt_model_used;
 pub mod namespace;
 pub mod object;
 pub mod op_region;
@@ -47,6 +48,7 @@ use core::{
     str::FromStr,
     sync::atomic::{AtomicU64, Ordering},
 };
+pub use interrupt_model_used::InterruptModelUsed;
 use log::{error, info, trace, warn};
 use namespace::{AmlName, Namespace, NamespaceLevelKind};
 use object::{
@@ -196,11 +198,15 @@ where
             R: RegionHandler + ?Sized,
         {
             let mapping = unsafe {
-                interpreter.handler.map_physical_region::<SdtHeader>(table.phys_address, table.length as usize)
+                PhysicalMapping::<_, SdtHeader>::new(
+                    table.phys_address,
+                    table.length as usize,
+                    &interpreter.handler,
+                )
             };
             let stream = unsafe {
                 slice::from_raw_parts(
-                    mapping.virtual_start.as_ptr().byte_add(mem::size_of::<SdtHeader>()) as *const u8,
+                    mapping.raw.virtual_start.as_ptr().byte_add(mem::size_of::<SdtHeader>()) as *const u8,
                     table.length as usize - mem::size_of::<SdtHeader>(),
                 )
             };
@@ -212,7 +218,7 @@ where
         let facs = {
             platform.tables.find_table::<Fadt>().and_then(|fadt| fadt.facs_address().ok()).map(
                 |facs_address| unsafe {
-                    platform.handler.map_physical_region(facs_address, mem::size_of::<Facs>())
+                    PhysicalMapping::<_, Facs>::new(facs_address, mem::size_of::<Facs>(), platform.handler.clone())
                 },
             )
         };

@@ -135,14 +135,15 @@ where
     /// ### Safety
     /// The supplied `GenericAddress` must be a valid GAS and all subsequent reads and writes must
     /// be valid.
-    pub unsafe fn map_gas(gas: GenericAddress, handler: &H) -> Result<MappedGas<H>, AcpiError> {
+    pub unsafe fn map_gas(gas: GenericAddress, handler: H) -> Result<MappedGas<H>, AcpiError> {
         match gas.address_space {
             AddressSpace::SystemMemory => {
                 // TODO: how to know total size needed?
-                let mapping = unsafe { handler.map_physical_region(gas.address as usize, 0x1000) };
-                Ok(MappedGas { gas, handler: handler.clone(), mapping: Some(mapping) })
+                let mapping =
+                    unsafe { PhysicalMapping::<_, u8>::new(gas.address as usize, 0x1000, handler.clone()) };
+                Ok(MappedGas { gas, handler, mapping: Some(mapping) })
             }
-            AddressSpace::SystemIo => Ok(MappedGas { gas, handler: handler.clone(), mapping: None }),
+            AddressSpace::SystemIo => Ok(MappedGas { gas, handler, mapping: None }),
             other => {
                 warn!("Mapping a GAS in address space {:?} is not supported!", other);
                 Err(AcpiError::LibUnimplemented)
@@ -160,10 +161,14 @@ where
             AddressSpace::SystemMemory => {
                 let mapping = self.mapping.as_ref().unwrap();
                 match access_size_bits {
-                    8 => Ok(unsafe { ptr::read_volatile(mapping.virtual_start.as_ptr() as *const u8) as u64 }),
-                    16 => Ok(unsafe { ptr::read_volatile(mapping.virtual_start.as_ptr() as *const u16) as u64 }),
-                    32 => Ok(unsafe { ptr::read_volatile(mapping.virtual_start.as_ptr() as *const u32) as u64 }),
-                    64 => Ok(unsafe { ptr::read_volatile(mapping.virtual_start.as_ptr() as *const u64) }),
+                    8 => Ok(unsafe { ptr::read_volatile(mapping.raw.virtual_start.as_ptr() as *const u8) as u64 }),
+                    16 => {
+                        Ok(unsafe { ptr::read_volatile(mapping.raw.virtual_start.as_ptr() as *const u16) as u64 })
+                    }
+                    32 => {
+                        Ok(unsafe { ptr::read_volatile(mapping.raw.virtual_start.as_ptr() as *const u32) as u64 })
+                    }
+                    64 => Ok(unsafe { ptr::read_volatile(mapping.raw.virtual_start.as_ptr() as *const u64) }),
                     _ => Err(AcpiError::InvalidGenericAddress),
                 }
             }
@@ -188,15 +193,15 @@ where
                 let mapping = self.mapping.as_ref().unwrap();
                 match access_size_bits {
                     8 => unsafe {
-                        ptr::write_volatile(mapping.virtual_start.as_ptr(), value as u8);
+                        ptr::write_volatile(mapping.raw.virtual_start.as_ptr(), value as u8);
                     },
                     16 => unsafe {
-                        ptr::write_volatile(mapping.virtual_start.as_ptr() as *mut u16, value as u16);
+                        ptr::write_volatile(mapping.raw.virtual_start.as_ptr() as *mut u16, value as u16);
                     },
                     32 => unsafe {
-                        ptr::write_volatile(mapping.virtual_start.as_ptr() as *mut u32, value as u32);
+                        ptr::write_volatile(mapping.raw.virtual_start.as_ptr() as *mut u32, value as u32);
                     },
-                    64 => unsafe { ptr::write_volatile(mapping.virtual_start.as_ptr() as *mut u64, value) },
+                    64 => unsafe { ptr::write_volatile(mapping.raw.virtual_start.as_ptr() as *mut u64, value) },
                     _ => return Err(AcpiError::InvalidGenericAddress),
                 }
                 Ok(())
@@ -214,6 +219,32 @@ where
                 warn!("Write to GAS with address space {:?} is not supported. Ignored.", self.gas.address_space);
                 Err(AcpiError::LibUnimplemented)
             }
+        }
+    }
+
+    /// Ignores the GAS access size and does a 16-bit read.
+    pub fn read_u16(&self, byte_offset: u64) -> u16 {
+        match self.gas.address_space {
+            AddressSpace::SystemMemory => {
+                let addr = self.mapping.as_ref().unwrap().raw.virtual_start.cast::<u16>();
+                unsafe { addr.byte_offset(byte_offset as isize).read_unaligned() }
+            }
+            AddressSpace::SystemIo => self.handler.read_io_u16(self.gas.address as u16 + byte_offset as u16),
+            address_space => todo!("{address_space:?}"),
+        }
+    }
+
+    /// Ignores the GAS access size and does a 16-bit write.
+    pub fn write_u16(&self, byte_offset: u64, value: u16) {
+        match self.gas.address_space {
+            AddressSpace::SystemMemory => {
+                let addr = self.mapping.as_ref().unwrap().raw.virtual_start.cast::<u16>();
+                unsafe { addr.byte_offset(byte_offset as isize).write_unaligned(value) }
+            }
+            AddressSpace::SystemIo => {
+                self.handler.write_io_u16(self.gas.address as u16 + byte_offset as u16, value)
+            }
+            address_space => todo!("{address_space:?}"),
         }
     }
 }
