@@ -31,7 +31,7 @@ where
     BufferField { buffer: W, offset: usize, length: usize },
     Device,
     Event(Arc<AtomicU64>),
-    FieldUnit(FieldUnit),
+    FieldUnit(FieldUnit<W>),
     Integer(u64),
     Method { code: Vec<u8>, flags: MethodFlags },
     NativeMethod { f: Arc<NativeMethod<W>>, flags: MethodFlags },
@@ -482,18 +482,18 @@ where
 }
 
 #[derive(Clone, Debug)]
-pub struct FieldUnit {
-    pub kind: FieldUnitKind,
+pub struct FieldUnit<W: WrappedObjectTrait> {
+    pub kind: FieldUnitKind<W>,
     pub flags: FieldFlags,
     pub bit_index: usize,
     pub bit_length: usize,
 }
 
 #[derive(Clone, Debug)]
-pub enum FieldUnitKind {
-    Normal { region: WrappedObject },
-    Bank { region: WrappedObject, bank: WrappedObject, bank_value: u64 },
-    Index { index: WrappedObject, data: WrappedObject },
+pub enum FieldUnitKind<W: WrappedObjectTrait> {
+    Normal { region: W },
+    Bank { region: W, bank: W, bank_value: u64 },
+    Index { index: W, data: W },
 }
 
 #[derive(Clone, Copy, Debug)]

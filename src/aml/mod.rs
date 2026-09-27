@@ -1838,7 +1838,7 @@ where
     fn parse_field_list(
         &self,
         context: &mut MethodContext,
-        kind: FieldUnitKind,
+        kind: FieldUnitKind<WrappedObject>,
         start_pc: usize,
         pkg_length: usize,
         mut flags: u8,
@@ -1884,7 +1884,7 @@ where
                     let field_name = context.namestring()?;
                     let field_length = context.pkglength()?;
 
-                    let field = Object::FieldUnit(FieldUnit {
+                    let field = Object::<WrappedObject>::FieldUnit(FieldUnit {
                         kind: kind.clone(),
                         bit_index: field_offset,
                         bit_length: field_length,
@@ -2515,7 +2515,7 @@ where
     /// operation regions, and then shifting and masking the resulting value as appropriate. Will
     /// return either an `Integer` or `Buffer` as appropriate, guided by the size of the field
     /// and expected integer size (as per the DSDT revision).
-    fn do_field_read(&self, field: &FieldUnit) -> Result<WrappedObject, AmlError> {
+    fn do_field_read(&self, field: &FieldUnit<WrappedObject>) -> Result<WrappedObject, AmlError> {
         let needs_buffer = field.bit_length > (self.integer_size as usize * 8);
         let access_width_bits = field.flags.access_type_bytes()? * 8;
 
@@ -2608,7 +2608,7 @@ where
         }
     }
 
-    fn do_field_write(&self, field: &FieldUnit, value: WrappedObject) -> Result<(), AmlError> {
+    fn do_field_write(&self, field: &FieldUnit<WrappedObject>, value: WrappedObject) -> Result<(), AmlError> {
         trace!("AML field write. Field = {:?}. Value = {}", field, value);
 
         let value_bytes = match &*value {
