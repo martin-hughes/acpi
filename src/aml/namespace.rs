@@ -1,7 +1,7 @@
 use super::{
     AmlError,
     Handle,
-    object::{Object, ObjectType, WrappedObject, WrappedObjectTrait},
+    object::{Object, ObjectType, WrappedObjectTrait},
 };
 use alloc::{
     collections::btree_map::BTreeMap,
@@ -17,13 +17,16 @@ use core::{
 use log::{trace, warn};
 
 #[derive(Clone)]
-pub struct Namespace {
-    root: NamespaceLevel,
+pub struct Namespace<W: WrappedObjectTrait> {
+    root: NamespaceLevel<W>,
 }
 
-impl Namespace {
+impl<W> Namespace<W>
+where
+    W: WrappedObjectTrait,
+{
     /// Create a new AML namespace, with the expected pre-defined objects.
-    pub fn new(global_lock_mutex: Handle) -> Namespace {
+    pub fn new(global_lock_mutex: Handle) -> Self {
         let mut namespace = Namespace { root: NamespaceLevel::new(NamespaceLevelKind::Scope) };
 
         namespace.add_level(AmlName::from_str("\\_GPE").unwrap(), NamespaceLevelKind::Scope).unwrap();
@@ -65,7 +68,7 @@ impl Namespace {
         namespace
             .insert(
                 AmlName::from_str("\\_OSI").unwrap(),
-                Object::native_method(1, |args: &[WrappedObject]| {
+                Object::native_method(1, |args: &[W]| {
                     if args.len() != 1 {
                         return Err(AmlError::MethodArgCountIncorrect);
                     }
@@ -166,7 +169,7 @@ impl Namespace {
         Ok(())
     }
 
-    pub fn insert(&mut self, path: AmlName, object: WrappedObject) -> Result<(), AmlError> {
+    pub fn insert(&mut self, path: AmlName, object: W) -> Result<(), AmlError> {
         let path = path.normalize_absolute()?;
 
         let (level, last_seg) = self.get_level_for_path_mut(&path)?;
@@ -183,7 +186,7 @@ impl Namespace {
         }
     }
 
-    pub fn create_alias(&mut self, path: AmlName, object: WrappedObject) -> Result<(), AmlError> {
+    pub fn create_alias(&mut self, path: AmlName, object: W) -> Result<(), AmlError> {
         let path = path.normalize_absolute()?;
 
         let (level, last_seg) = self.get_level_for_path_mut(&path)?;
@@ -193,7 +196,7 @@ impl Namespace {
         }
     }
 
-    pub fn get(&mut self, path: AmlName) -> Result<WrappedObject, AmlError> {
+    pub fn get(&mut self, path: AmlName) -> Result<W, AmlError> {
         let path = path.normalize_absolute()?;
 
         let (level, last_seg) = self.get_level_for_path_mut(&path)?;
@@ -206,7 +209,7 @@ impl Namespace {
     /// Search for an object at the given path of the namespace, applying the search rules described in §5.3 of the
     /// ACPI specification, if they are applicable. Returns the resolved name, and the handle of the first valid
     /// object, if found. Errors if `starting_scope` is not absolute.
-    pub fn search(&self, path: &AmlName, starting_scope: &AmlName) -> Result<(AmlName, WrappedObject), AmlError> {
+    pub fn search(&self, path: &AmlName, starting_scope: &AmlName) -> Result<(AmlName, W), AmlError> {
         starting_scope.require_absolute()?;
 
         if path.search_rules_apply() {
@@ -277,7 +280,7 @@ impl Namespace {
 
     /// Split an absolute path into a bunch of level segments (used to traverse the level data structure), and a
     /// last segment to index into that level. This must not be called on `\\`.
-    fn get_level_for_path(&self, path: &AmlName) -> Result<(&NamespaceLevel, NameSeg), AmlError> {
+    fn get_level_for_path(&self, path: &AmlName) -> Result<(&NamespaceLevel<W>, NameSeg), AmlError> {
         assert_ne!(*path, AmlName::root());
 
         let (last_seg, levels) = path.0[1..].split_last().unwrap();
@@ -304,7 +307,7 @@ impl Namespace {
 
     /// Split an absolute path into a bunch of level segments (used to traverse the level data structure), and a
     /// last segment to index into that level. This must not be called on `\\`.
-    fn get_level_for_path_mut(&mut self, path: &AmlName) -> Result<(&mut NamespaceLevel, NameSeg), AmlError> {
+    fn get_level_for_path_mut(&mut self, path: &AmlName) -> Result<(&mut NamespaceLevel<W>, NameSeg), AmlError> {
         assert_ne!(*path, AmlName::root());
 
         let (last_seg, levels) = path.0[1..].split_last().unwrap();
@@ -338,11 +341,12 @@ impl Namespace {
     /// children of the level should also be traversed.
     pub fn traverse<F>(&mut self, mut f: F) -> Result<(), AmlError>
     where
-        F: FnMut(&AmlName, &NamespaceLevel) -> Result<bool, AmlError>,
+        F: FnMut(&AmlName, &NamespaceLevel<W>) -> Result<bool, AmlError>,
     {
-        fn traverse_level<F>(level: &NamespaceLevel, scope: &AmlName, f: &mut F) -> Result<(), AmlError>
+        fn traverse_level<W, F>(level: &NamespaceLevel<W>, scope: &AmlName, f: &mut F) -> Result<(), AmlError>
         where
-            F: FnMut(&AmlName, &NamespaceLevel) -> Result<bool, AmlError>,
+            F: FnMut(&AmlName, &NamespaceLevel<W>) -> Result<bool, AmlError>,
+            W: WrappedObjectTrait,
         {
             for (name, child) in level.children.iter() {
                 let name = AmlName::from_name_seg(*name).resolve(scope)?;
@@ -363,13 +367,23 @@ impl Namespace {
     }
 }
 
-impl fmt::Display for Namespace {
+impl<W> fmt::Display for Namespace<W>
+where
+    W: WrappedObjectTrait,
+{
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         const STEM: &str = "│   ";
         const BRANCH: &str = "├── ";
         const END: &str = "└── ";
 
-        fn print_level(f: &mut fmt::Formatter<'_>, level: &NamespaceLevel, indent_stack: String) -> fmt::Result {
+        fn print_level<W>(
+            f: &mut fmt::Formatter<'_>,
+            level: &NamespaceLevel<W>,
+            indent_stack: String,
+        ) -> fmt::Result
+        where
+            W: WrappedObjectTrait,
+        {
             for (i, (name, (flags, object))) in level.values.iter().enumerate() {
                 let end = (i == level.values.len() - 1)
                     && level.children.iter().filter(|(_, l)| l.kind == NamespaceLevelKind::Scope).count() == 0;
@@ -420,10 +434,10 @@ pub enum NamespaceLevelKind {
 }
 
 #[derive(Clone)]
-pub struct NamespaceLevel {
+pub struct NamespaceLevel<W: WrappedObjectTrait> {
     pub kind: NamespaceLevelKind,
-    pub values: BTreeMap<NameSeg, (ObjectFlags, WrappedObject)>,
-    pub children: BTreeMap<NameSeg, NamespaceLevel>,
+    pub values: BTreeMap<NameSeg, (ObjectFlags, W)>,
+    pub children: BTreeMap<NameSeg, NamespaceLevel<W>>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -441,8 +455,11 @@ impl ObjectFlags {
     }
 }
 
-impl NamespaceLevel {
-    pub fn new(kind: NamespaceLevelKind) -> NamespaceLevel {
+impl<W> NamespaceLevel<W>
+where
+    W: WrappedObjectTrait,
+{
+    pub fn new(kind: NamespaceLevelKind) -> Self {
         NamespaceLevel { kind, values: BTreeMap::new(), children: BTreeMap::new() }
     }
 }

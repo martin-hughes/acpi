@@ -110,7 +110,7 @@ where
     R: RegionHandler + ?Sized,
 {
     handler: H,
-    pub namespace: Spinlock<Namespace>,
+    pub namespace: Spinlock<Namespace<WrappedObject>>,
     pub object_token: Spinlock<ObjectToken>,
     integer_size: IntegerSize,
     region_handlers: Spinlock<BTreeMap<RegionSpace, Box<R>>>,
