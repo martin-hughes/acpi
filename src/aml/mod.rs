@@ -63,6 +63,7 @@ use object::{
     ObjectType,
     ReferenceKind,
     WrappedObject,
+    WrappedObjectTrait,
 };
 use op_region::{OpRegion, RegionHandler, RegionSpace};
 use pci_types::PciAddress;
@@ -578,7 +579,7 @@ where
                             buffer.push(0x79);
                             // Don't calculate the new real checksum - just use 0
                             buffer.push(0x00);
-                            Object::Buffer(buffer).wrap()
+                            Object::<WrappedObject>::Buffer(buffer).wrap()
                         };
                         // TODO: use potentially-updated result for return value here
                         self.do_store(target.clone(), result.clone())?;
@@ -2145,7 +2146,7 @@ where
         let index = index.clone().unwrap_transparent_reference().as_integer()? as usize;
         let length = length.clone().unwrap_transparent_reference().as_integer()? as usize;
 
-        let result = match **source {
+        let result: WrappedObject = match **source {
             Object::String(ref string) => {
                 if index >= string.len() {
                     Object::String(String::new())
@@ -2179,7 +2180,7 @@ where
         let source1 = source1.clone().unwrap_transparent_reference();
         let source2 = source2.clone().unwrap_transparent_reference();
 
-        fn resolve_as_string(obj: &Object) -> String {
+        fn resolve_as_string(obj: &Object<WrappedObject>) -> String {
             match obj {
                 Object::Uninitialized => "[Uninitialized Object]".to_string(),
                 Object::Buffer(bytes) => String::from_utf8_lossy(bytes).into_owned(),

@@ -6,26 +6,40 @@ use alloc::{
     vec::Vec,
 };
 use bit_field::BitField;
-use core::{cell::UnsafeCell, cmp::Ordering, fmt, ops, sync::atomic::AtomicU64};
+use core::{
+    cell::UnsafeCell,
+    cmp::Ordering,
+    fmt,
+    ops,
+    ops::{Deref, DerefMut},
+    sync::atomic::AtomicU64,
+};
 
-type NativeMethod = dyn Fn(&[WrappedObject]) -> Result<WrappedObject, AmlError>;
+// The expectation here is that W will be some type of WrappedObject.
+type NativeMethod<W>
+where
+    W: WrappedObjectTrait,
+= dyn Fn(&[W]) -> Result<W, AmlError>;
 
 #[derive(Clone)]
-pub enum Object {
+pub enum Object<W>
+where
+    W: WrappedObjectTrait,
+{
     Uninitialized,
     Buffer(Vec<u8>),
-    BufferField { buffer: WrappedObject, offset: usize, length: usize },
+    BufferField { buffer: W, offset: usize, length: usize },
     Device,
     Event(Arc<AtomicU64>),
     FieldUnit(FieldUnit),
     Integer(u64),
     Method { code: Vec<u8>, flags: MethodFlags },
-    NativeMethod { f: Arc<NativeMethod>, flags: MethodFlags },
+    NativeMethod { f: Arc<NativeMethod<W>>, flags: MethodFlags },
     Mutex { mutex: Handle, sync_level: u8 },
-    Reference { kind: ReferenceKind, inner: WrappedObject },
+    Reference { kind: ReferenceKind, inner: W },
     NamePath { name: AmlName, scope: AmlName },
     OpRegion(OpRegion),
-    Package(Vec<WrappedObject>),
+    Package(Vec<W>),
     PowerResource { system_level: u8, resource_order: u16 },
     Processor { proc_id: u8, pblk_address: u32, pblk_length: u8 },
     RawDataBuffer,
@@ -34,10 +48,13 @@ pub enum Object {
     Debug,
 }
 
-impl Object {
-    pub fn native_method<F>(num_args: u8, f: F) -> Object
+impl<W> Object<W>
+where
+    W: WrappedObjectTrait,
+{
+    pub fn native_method<F>(num_args: u8, f: F) -> Self
     where
-        F: Fn(&[WrappedObject]) -> Result<WrappedObject, AmlError> + 'static,
+        F: Fn(&[W]) -> Result<W, AmlError> + 'static,
     {
         let mut flags = 0;
         flags.set_bits(0..3, num_args);
@@ -45,7 +62,10 @@ impl Object {
     }
 }
 
-impl fmt::Display for Object {
+impl<W> fmt::Display for Object<W>
+where
+    W: WrappedObjectTrait,
+{
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Object::Uninitialized => write!(f, "[Uninitialized]"),
@@ -105,10 +125,23 @@ impl ObjectToken {
 }
 
 #[derive(Clone, Debug)]
-pub struct WrappedObject(Arc<UnsafeCell<Object>>);
+pub struct WrappedObject(Arc<UnsafeCell<Object<Self>>>);
 
-impl WrappedObject {
-    pub fn new(object: Object) -> WrappedObject {
+pub trait WrappedObjectTrait: Clone + Deref<Target = Object<Self>> {
+    fn new(object: Object<Self>) -> Self;
+    unsafe fn gain_mut<'r, 'a, 't>(&'a self, _token: &'t ObjectToken) -> &'r mut Object<Self> where
+        't: 'r,
+        'a: 'r,;
+    fn unwrap_reference(self) -> Self;
+    fn unwrap_transparent_reference(self) -> Self;
+    // TODO: Can this be made pub(crate) again?
+    fn unwrap_ref_for_store(self) -> Result<(Self, bool), AmlError>;
+}
+
+impl WrappedObject {}
+
+impl WrappedObjectTrait for WrappedObject {
+    fn new(object: Object<Self>) -> WrappedObject {
         #[allow(clippy::arc_with_non_send_sync)]
         WrappedObject(Arc::new(UnsafeCell::new(object)))
     }
@@ -121,7 +154,7 @@ impl WrappedObject {
     /// prevent the same object, referenced from multiple [`WrappedObject`]s, having multiple
     /// mutable (and therefore aliasing) references being made to it, and therefore care must be
     /// taken in the interpreter to prevent this.
-    pub unsafe fn gain_mut<'r, 'a, 't>(&'a self, _token: &'t ObjectToken) -> &'r mut Object
+    unsafe fn gain_mut<'r, 'a, 't>(&'a self, _token: &'t ObjectToken) -> &'r mut Object<Self>
     where
         't: 'r,
         'a: 'r,
@@ -129,7 +162,7 @@ impl WrappedObject {
         unsafe { &mut *(self.0.get()) }
     }
 
-    pub fn unwrap_reference(self) -> WrappedObject {
+    fn unwrap_reference(self) -> WrappedObject {
         let mut object = self;
         loop {
             if let Object::Reference { ref inner, .. } = *object {
@@ -142,7 +175,7 @@ impl WrappedObject {
 
     /// Unwraps 'transparent' references (e.g. locals, arguments, and internal usage of reference-type objects), but maintain 'real'
     /// references deliberately created by AML.
-    pub fn unwrap_transparent_reference(self) -> WrappedObject {
+    fn unwrap_transparent_reference(self) -> WrappedObject {
         let mut object = self;
         loop {
             if let Object::Reference { kind, ref inner } = *object
@@ -162,7 +195,7 @@ impl WrappedObject {
     /// Returns a tuple containing:
     /// - The object that should be modified
     /// - A boolean indicating whether an implicit cast should occur before the store
-    pub(crate) fn unwrap_ref_for_store(self) -> Result<(WrappedObject, bool), AmlError> {
+    fn unwrap_ref_for_store(self) -> Result<(WrappedObject, bool), AmlError> {
         let Object::Reference { kind: outer_kind, .. } = *self else {
             return Err(AmlError::ObjectNotOfExpectedType { expected: ObjectType::Reference, got: self.typ() });
         };
@@ -211,8 +244,8 @@ impl WrappedObject {
     }
 }
 
-impl ops::Deref for WrappedObject {
-    type Target = Object;
+impl Deref for WrappedObject {
+    type Target = Object<Self>;
 
     fn deref(&self) -> &Self::Target {
         /*
@@ -231,9 +264,12 @@ impl fmt::Display for WrappedObject {
     }
 }
 
-impl Object {
-    pub fn wrap(self) -> WrappedObject {
-        WrappedObject::new(self)
+impl<W> Object<W>
+where
+    W: WrappedObjectTrait,
+{
+    pub fn wrap(self) -> W {
+        W::new(self)
     }
 
     /// Unwraps an integer object. Errors if not already an integer.
@@ -316,7 +352,7 @@ impl Object {
         }
     }
 
-    pub fn read_buffer_field(&self, integer_size: IntegerSize) -> Result<Object, AmlError> {
+    pub fn read_buffer_field(&self, integer_size: IntegerSize) -> Result<Self, AmlError> {
         if let Self::BufferField { buffer, offset, length } = self {
             let buffer = buffer.clone().unwrap_transparent_reference();
             let buffer = match &*buffer {
@@ -369,7 +405,7 @@ impl Object {
     /// Replace this object's contents with that of a `new` object, applying implicit casting rules
     /// as needed. This follows the NT interpreter's creative interpretation of implicit casts, which is
     /// effectively a byte-wise transmutation.
-    pub fn replace_with_implicit_casting(&mut self, new: Object) -> Result<(), AmlError> {
+    pub fn replace_with_implicit_casting(&mut self, new: Self) -> Result<(), AmlError> {
         let new_bytes = match new {
             Object::Integer(value) => &value.to_le_bytes(),
             Object::String(ref value) => value.as_bytes(),
@@ -429,7 +465,7 @@ impl Object {
     ///
     /// This function is not intended to be used for `impl PartialOrd` because we don't want to tie
     /// the meaning of `object_a.cmp(object_b)` to those AML rules - we may want more flexibility.
-    pub fn aml_cmp(&self, other: &Object) -> Result<Ordering, AmlError> {
+    pub fn aml_cmp(&self, other: &Self) -> Result<Ordering, AmlError> {
         match (self, &other) {
             (Object::Integer(a), Object::Integer(b)) => Ok(a.cmp(b)),
             (Object::String(a), Object::String(b)) => Ok(a.cmp(b)),
@@ -674,13 +710,13 @@ mod tests {
 
     #[test]
     fn buffer_to_integer() {
-        let buffer = Object::Buffer(Vec::from([0xab, 0xcd, 0xef, 0x01, 0xff]));
+        let buffer = Object::<WrappedObject>::Buffer(Vec::from([0xab, 0xcd, 0xef, 0x01, 0xff]));
         assert_eq!(buffer.to_integer(IntegerSize::FourBytes).unwrap(), 0x01efcdab);
     }
     #[test]
     fn buffer_field_to_integer() {
         const BUFFER: [u8; 5] = [0xffu8; 5];
-        let buffer = Object::Buffer(Vec::from(BUFFER)).wrap();
+        let buffer = Object::<WrappedObject>::Buffer(Vec::from(BUFFER)).wrap();
         let buffer_field = Object::BufferField { buffer, offset: 5, length: 9 };
 
         assert_eq!(buffer_field.to_integer(IntegerSize::FourBytes).unwrap(), 0x1ff);
@@ -690,7 +726,7 @@ mod tests {
     fn buffer_field_to_4_byte_integer() {
         // The ones in this buffer are strategically chosen to not make it to the final integer.
         const BUFFER: [u8; 5] = [0x0f, 0x00, 0x00, 0x00, 0xf0];
-        let buffer = Object::Buffer(Vec::from(BUFFER)).wrap();
+        let buffer = Object::<WrappedObject>::Buffer(Vec::from(BUFFER)).wrap();
         let buffer_field = Object::BufferField {
             buffer,
             offset: 4,
@@ -703,7 +739,7 @@ mod tests {
     #[test]
     fn buffer_field_to_8_byte_integer() {
         const BUFFER: [u8; 6] = [0x0f, 0x00, 0x00, 0x00, 0xf0, 0xff];
-        let buffer = Object::Buffer(Vec::from(BUFFER)).wrap();
+        let buffer = Object::<WrappedObject>::Buffer(Vec::from(BUFFER)).wrap();
         let buffer_field = Object::BufferField { buffer, offset: 4, length: 36 };
 
         assert_eq!(buffer_field.to_integer(IntegerSize::EightBytes).unwrap(), 0x0000000f_00000000);
@@ -714,9 +750,9 @@ mod tests {
         // As may be encountered in the last line of:
         // Local1 = RefOf(Local0)
         // Local1 = 2 (the actual store is omitted)
-        let local0 = Object::Reference { kind: ReferenceKind::Local, inner: Object::Integer(1).wrap() }.wrap();
-        let ref_of = Object::Reference { kind: ReferenceKind::RefOf, inner: local0 }.wrap();
-        let local1 = Object::Reference { kind: ReferenceKind::Local, inner: ref_of }.wrap();
+        let local0 = Object::<WrappedObject>::Reference { kind: ReferenceKind::Local, inner: Object::Integer(1).wrap() }.wrap();
+        let ref_of = Object::<WrappedObject>::Reference { kind: ReferenceKind::RefOf, inner: local0 }.wrap();
+        let local1 = Object::<WrappedObject>::Reference { kind: ReferenceKind::Local, inner: ref_of }.wrap();
 
         let target = local1.unwrap_ref_for_store();
         let target = target.unwrap();
@@ -734,8 +770,8 @@ mod tests {
         // Local0 = 1
         // MEFD(Local0)
         // ... and inside MEFD: Arg0 = 2 (the actual store is omitted)
-        let local0 = Object::Reference { kind: ReferenceKind::Local, inner: Object::Integer(1).wrap() }.wrap();
-        let arg0 = Object::Reference { kind: ReferenceKind::Arg, inner: local0.clone() }.wrap();
+        let local0 = Object::<WrappedObject>::Reference { kind: ReferenceKind::Local, inner: Object::Integer(1).wrap() }.wrap();
+        let arg0 = Object::<WrappedObject>::Reference { kind: ReferenceKind::Arg, inner: local0.clone() }.wrap();
 
         let target = arg0.unwrap_ref_for_store();
         let (target, implicit_cast_reqd) = target.unwrap();
@@ -750,9 +786,9 @@ mod tests {
         // Local0 = 1
         // Arg0 = RefOf(Local0)
         // Arg0 = 2 (the actual store is omitted)
-        let local0 = Object::Reference { kind: ReferenceKind::Local, inner: Object::Integer(1).wrap() }.wrap();
-        let ref_of = Object::Reference { kind: ReferenceKind::RefOf, inner: local0 }.wrap();
-        let arg0 = Object::Reference { kind: ReferenceKind::Arg, inner: ref_of }.wrap();
+        let local0 = Object::<WrappedObject>::Reference { kind: ReferenceKind::Local, inner: Object::Integer(1).wrap() }.wrap();
+        let ref_of = Object::<WrappedObject>::Reference { kind: ReferenceKind::RefOf, inner: local0 }.wrap();
+        let arg0 = Object::<WrappedObject>::Reference { kind: ReferenceKind::Arg, inner: ref_of }.wrap();
 
         let target = arg0.unwrap_ref_for_store();
         let (target, implicit_cast_reqd) = target.unwrap();
@@ -768,7 +804,7 @@ mod tests {
     #[test]
     fn store_local_refof_arg_to_local_string() {
         // This covers the weird Windows NT handling of references that ultimately end up as Strings
-        let string = Object::String("string".to_string()).wrap();
+        let string = Object::<WrappedObject>::String("string".to_string()).wrap();
         let outer_local = Object::Reference { kind: ReferenceKind::Local, inner: string.clone() }.wrap();
         let arg0 = Object::Reference { kind: ReferenceKind::Arg, inner: outer_local }.wrap();
         let ref_of = Object::Reference { kind: ReferenceKind::RefOf, inner: arg0 }.wrap();

@@ -3,6 +3,7 @@ use crate::aml::{
     Handler,
     Interpreter,
     Operation,
+    WrappedObjectTrait,
     namespace::AmlName,
     object::Object,
     resource::{self, InterruptPolarity, InterruptTrigger, Irqs, Resource},

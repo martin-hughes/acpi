@@ -64,7 +64,10 @@ pub mod sdt;
 pub use pci_types::PciAddress;
 pub use sdt::{fadt::PowerProfile, hpet::HpetInfo, madt::MadtError};
 
-use crate::sdt::{SdtHeader, Signature};
+use crate::{
+    aml::object::WrappedObjectTrait,
+    sdt::{SdtHeader, Signature},
+};
 use core::{
     fmt,
     mem,
@@ -580,7 +583,11 @@ pub trait Handler: Clone {
     fn breakpoint(&self) {}
 
     #[cfg(feature = "aml")]
-    fn handle_debug(&self, _object: &aml::object::Object) {}
+    fn handle_debug<W>(&self, _object: &aml::object::Object<W>)
+    where
+        W: WrappedObjectTrait,
+    {
+    }
 
     #[cfg(feature = "aml")]
     fn handle_fatal_error(&self, fatal_type: u8, fatal_code: u32, fatal_arg: u64) {
@@ -745,7 +752,10 @@ impl<H: Handler> Handler for &H {
 
     #[inline]
     #[cfg(feature = "aml")]
-    fn handle_debug(&self, object: &aml::object::Object) {
+    fn handle_debug<W>(&self, object: &aml::object::Object<W>)
+    where
+        W: WrappedObjectTrait,
+    {
         (**self).handle_debug(object)
     }
 

@@ -1,6 +1,10 @@
 use acpi::{
     Handler,
-    aml::{Interpreter, namespace::AmlName, object::Object},
+    aml::{
+        Interpreter,
+        namespace::AmlName,
+        object::{Object, WrappedObject},
+    },
 };
 use aml_test_tools::{
     RunTestResult,
@@ -11,7 +15,6 @@ use aml_test_tools::{
     run_test_for_string,
 };
 use std::str::FromStr;
-
 // `run_aml_test` and `run_opcodes_test` are very similar in structure, but whilst there are only
 // two of them it's not worth adding complexity to make them DRY.
 
@@ -45,7 +48,7 @@ pub fn run_aml_test_with_result<H: Handler>(asl: &'static str, handler: H) -> Ru
 
 /// Evaluate an object without arguments and return its unwrapped value.
 #[allow(dead_code)]
-pub fn evaluate(interpreter: &Interpreter<impl Handler>, path: &str) -> Object {
+pub fn evaluate(interpreter: &Interpreter<impl Handler>, path: &str) -> Object<WrappedObject> {
     (*interpreter.evaluate(AmlName::from_str(path).unwrap(), vec![]).unwrap()).clone()
 }
 

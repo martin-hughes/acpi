@@ -1,6 +1,11 @@
 //! A [`Handler`] that logs all calls, then forwards them to an inner handler.
 
-use acpi::{Handle, Handler, RawPhysicalMapping, aml::object::Object};
+use acpi::{
+    Handle,
+    Handler,
+    RawPhysicalMapping,
+    aml::object::{Object, WrappedObjectTrait},
+};
 use log::info;
 use pci_types::PciAddress;
 
@@ -179,7 +184,7 @@ where
         self.next_handler.release(mutex);
     }
 
-    fn handle_debug(&self, object: &Object) {
+    fn handle_debug<W: WrappedObjectTrait>(&self, object: &Object<W>) {
         info!("Debug store: {}", object);
         self.next_handler.handle_debug(object);
     }

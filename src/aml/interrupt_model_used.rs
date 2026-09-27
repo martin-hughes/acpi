@@ -7,7 +7,7 @@ use crate::{
         AmlError,
         BaseInterpreter,
         namespace::AmlName,
-        object::{Object, WrappedObject},
+        object::{Object, WrappedObject, WrappedObjectTrait},
         op_region::RegionHandler,
     },
 };
@@ -30,7 +30,10 @@ pub enum InterruptModelUsed {
     RintcModel = 6,
 }
 
-impl From<InterruptModelUsed> for Object {
+impl<W> From<InterruptModelUsed> for Object<W>
+where
+    W: WrappedObjectTrait,
+{
     fn from(value: InterruptModelUsed) -> Self {
         Self::Integer(match value {
             InterruptModelUsed::PicMode => 0,

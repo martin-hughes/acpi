@@ -1,4 +1,4 @@
-use acpi::aml::object::Object;
+use acpi::aml::object::{Object, WrappedObject};
 
 #[derive(Clone, Debug)]
 pub enum ExpectedResult {
@@ -6,7 +6,7 @@ pub enum ExpectedResult {
     String(String),
 }
 
-pub fn result_matches(expected: &ExpectedResult, actual: &Object) -> bool {
+pub fn result_matches(expected: &ExpectedResult, actual: &Object<WrappedObject>) -> bool {
     match (expected, actual) {
         (ExpectedResult::Integer(expected), Object::Integer(actual)) => expected == actual,
         (ExpectedResult::String(expected), Object::String(actual)) => expected == actual,

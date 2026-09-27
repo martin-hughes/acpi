@@ -1,7 +1,7 @@
 use super::{
     AmlError,
     Handle,
-    object::{Object, ObjectType, WrappedObject},
+    object::{Object, ObjectType, WrappedObject, WrappedObjectTrait},
 };
 use alloc::{
     collections::btree_map::BTreeMap,
@@ -65,7 +65,7 @@ impl Namespace {
         namespace
             .insert(
                 AmlName::from_str("\\_OSI").unwrap(),
-                Object::native_method(1, |args| {
+                Object::native_method(1, |args: &[WrappedObject]| {
                     if args.len() != 1 {
                         return Err(AmlError::MethodArgCountIncorrect);
                     }
