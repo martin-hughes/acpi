@@ -2473,36 +2473,21 @@ where
         Ok(object)
     }
 
-    /// Copy `object` into `target`, matching the expected behaviour of `DefCopyObject`, which
-    /// depends on the object referenced:
-    ///    - Locals are overwritten
-    ///    - Args are overwritten, unless they are references, in which case the referenced object is overwritten
-    ///    - Objects referenced by name are overwritten
-    ///    - Index references cause the object at the index to be overwritten
-    ///    - Other reference operations are not allowed
+    /// Copy `object` into `target`, matching the expected behaviour of `DefCopyObject`.
+    ///
+    /// Those rules break into two parts:
+    /// 1. How to deal with Args, Locals, references - which are dealt with by
+    ///    [`WrappedObject::unwrap_ref_for_copyobject`]
+    /// 2. What to do when copying over objects of various types, which are dealt with here.
     fn do_copy_object(&self, target: WrappedObject, object: WrappedObject) -> Result<(), AmlError> {
-        let Object::Reference { kind, ref inner } = *target else {
-            return Err(AmlError::InternalError("Target of CopyObject must be a reference".to_string()));
-        };
+        let dst = target.unwrap_ref_for_copyobject()?;
         let object = object.clone().unwrap_transparent_reference();
         let token = self.object_token.lock();
 
-        let dst = match kind {
-            ReferenceKind::Named | ReferenceKind::Local => inner.clone().unwrap_transparent_reference(),
-            ReferenceKind::Arg => {
-                if let Object::Reference { kind: _, inner: ref inner_inner } = **inner {
-                    inner_inner.clone()
-                } else {
-                    inner.clone().unwrap_transparent_reference()
-                }
-            }
-            ReferenceKind::Index => todo!(),
-            ReferenceKind::RefOf | ReferenceKind::Unresolved => return Err(AmlError::StoreToInvalidReferenceType),
-        };
-
-        unsafe {
-            *dst.gain_mut(&token) = (*object).clone();
-        }
+        // TODO: This is definitively *unsound* if dst and object are one and the same... (due to
+        // mut and non-mut refs existing simultaneously)
+        let mut_ref = unsafe { dst.gain_mut(&token) };
+        *mut_ref = (*object).clone();
 
         Ok(())
     }
