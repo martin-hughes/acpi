@@ -4,13 +4,13 @@
 mod test_infra;
 
 use crate::test_infra::{evaluate, run_aml_test};
+use aml_test_tools::handlers::null_handler::NullHandler;
 use mh_acpi::aml::{
     namespace::AmlName,
     object::Object,
     pci_routing::{PciRoutingTable, Pin},
     resource::Irqs,
 };
-use aml_test_tools::handlers::null_handler::NullHandler;
 use std::str::FromStr;
 
 /// A cut-down version of the `gpio-leds` `_DSD` from the AMD Rhino, which refers to the device the

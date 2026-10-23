@@ -1,6 +1,6 @@
 mod test_infra;
-use mh_acpi::aml::AmlError;
 use aml_test_tools::{RunTestResult, TestFailureReason, handlers::null_handler::NullHandler};
+use mh_acpi::aml::AmlError;
 use std::assert_matches;
 
 #[test]

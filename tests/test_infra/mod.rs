@@ -1,7 +1,3 @@
-use mh_acpi::{
-    Handler,
-    aml::{Interpreter, namespace::AmlName, object::Object},
-};
 use aml_test_tools::{
     RunTestResult,
     TestResult,
@@ -9,6 +5,10 @@ use aml_test_tools::{
     new_interpreter,
     run_test_for_opcodes,
     run_test_for_string,
+};
+use mh_acpi::{
+    Handler,
+    aml::{Interpreter, namespace::AmlName, object::Object},
 };
 use std::str::FromStr;
 
@@ -56,11 +56,21 @@ pub fn evaluate(interpreter: &Interpreter<impl Handler>, path: &str) -> Object {
 /// opcodes to execute.
 #[allow(dead_code)]
 pub fn run_opcodes_test(opcodes: &[u8], handler: impl Handler) {
+    let result = run_opcodes_test_with_result(opcodes, handler);
+    assert!(matches!(result, RunTestResult::Pass(_)), "Test failed with: {:?}", TestResult::from(&result));
+}
+
+/// Run a test against a sequence of AML opcodes and return the raw result.
+///
+/// The provided opcodes are wrapped in a `MAIN` method and also have a table header prepended. The
+/// `MAIN` function is executed as part of the test, so `opcodes` only needs to include the actual
+/// opcodes to execute.
+#[allow(dead_code)]
+pub fn run_opcodes_test_with_result<H: Handler>(opcodes: &[u8], handler: H) -> RunTestResult<LoggingHandler<H>> {
     let _ = pretty_env_logger::try_init();
 
     let logged_handler = LoggingHandler::new(handler);
     let interpreter = new_interpreter(logged_handler);
 
-    let result = run_test_for_opcodes(opcodes, interpreter, &None);
-    assert!(matches!(result, RunTestResult::Pass(_)), "Test failed with: {:?}", TestResult::from(&result));
+    run_test_for_opcodes(opcodes, interpreter, &None)
 }

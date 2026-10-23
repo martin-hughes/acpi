@@ -7,8 +7,11 @@ use alloc::{
 };
 use bit_field::BitField;
 use core::{cell::UnsafeCell, cmp::Ordering, fmt, ops, sync::atomic::AtomicU64};
+use static_assertions::assert_impl_all;
 
-type NativeMethod = dyn Fn(&[WrappedObject]) -> Result<WrappedObject, AmlError>;
+type NativeMethod = dyn Fn(&[WrappedObject]) -> Result<WrappedObject, AmlError> + Send + Sync;
+
+pub type Package = Vec<WrappedObject>;
 
 #[derive(Clone)]
 pub enum Object {
@@ -25,7 +28,7 @@ pub enum Object {
     Reference { kind: ReferenceKind, inner: WrappedObject },
     NamePath { name: AmlName, scope: AmlName },
     OpRegion(OpRegion),
-    Package(Vec<WrappedObject>),
+    Package(Package),
     PowerResource { system_level: u8, resource_order: u16 },
     Processor { proc_id: u8, pblk_address: u32, pblk_length: u8 },
     RawDataBuffer,
@@ -37,7 +40,7 @@ pub enum Object {
 impl Object {
     pub fn native_method<F>(num_args: u8, f: F) -> Object
     where
-        F: Fn(&[WrappedObject]) -> Result<WrappedObject, AmlError> + 'static,
+        F: Fn(&[WrappedObject]) -> Result<WrappedObject, AmlError> + 'static + Send + Sync,
     {
         let mut flags = 0;
         flags.set_bits(0..3, num_args);
@@ -104,8 +107,14 @@ impl ObjectToken {
     }
 }
 
+// In order for us to assert WrappedObject is Send + Sync, Object must be.
+assert_impl_all!(Object: Send, Sync);
+
 #[derive(Clone, Debug)]
 pub struct WrappedObject(Arc<UnsafeCell<Object>>);
+
+unsafe impl Send for WrappedObject {}
+unsafe impl Sync for WrappedObject {}
 
 impl WrappedObject {
     pub fn new(object: Object) -> WrappedObject {

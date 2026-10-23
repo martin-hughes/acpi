@@ -4,9 +4,9 @@
 // it for all tests - which causes these tests of the locking mechanism to conflict with each other
 // when run in parallel.
 
-use mh_acpi::{Handle, Handler, RawPhysicalMapping, aml::AmlError};
 use aml_test_tools::new_interpreter;
 use lock_api::RawReentrantMutex;
+use mh_acpi::{Handle, Handler, RawPhysicalMapping, aml::AmlError};
 use parking_lot::{RawMutex, RawThreadId};
 use pci_types::PciAddress;
 use serial_test::serial;
