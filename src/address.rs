@@ -151,27 +151,54 @@ where
         }
     }
 
+    /// Read from the GAS.
+    ///
+    /// This function assumes the GAS points at a standard integer-sized register that is aligned.
+    ///
+    /// To read other-sized registers, use [`read_part`].
     pub fn read(&self) -> Result<u64, AcpiError> {
         /*
          * TODO: this is only correct for basic GASs that require a single access. Extend it to
          * support bit offsets and multiple reads etc.
          */
         let access_size_bits = gas_decode_access_bit_width(self.gas)?;
+        self.read_part(access_size_bits, 0)
+    }
+
+    /// Read from part of a GAS-mapped region.
+    ///
+    /// This function is useful if the GAS maps a register that is not a regular integer size.
+    ///
+    /// If reading from a pointer, the read is assumed to be aligned.
+    pub fn read_part(&self, bit_width: u8, byte_offset: usize) -> Result<u64, AcpiError> {
+        // Check to prevent reading outside the GAS
+        if byte_offset * 8 + bit_width as usize > self.gas.bit_width as usize {
+            return Err(AcpiError::InvalidGenericAddress);
+        }
+
         match self.gas.address_space {
             AddressSpace::SystemMemory => {
                 let mapping = self.mapping.as_ref().unwrap();
-                match access_size_bits {
-                    8 => Ok(unsafe { ptr::read_volatile(mapping.as_ptr()) as u64 }),
-                    16 => Ok(unsafe { ptr::read_volatile(mapping.as_ptr() as *const u16) as u64 }),
-                    32 => Ok(unsafe { ptr::read_volatile(mapping.as_ptr() as *const u32) as u64 }),
-                    64 => Ok(unsafe { ptr::read_volatile(mapping.as_ptr() as *const u64) }),
+                match bit_width {
+                    8 => Ok(unsafe {
+                        ptr::read_volatile(mapping.as_ptr().byte_offset(byte_offset as isize)) as u64
+                    }),
+                    16 => Ok(unsafe {
+                        ptr::read_volatile(mapping.as_ptr().byte_offset(byte_offset as isize) as *const u16) as u64
+                    }),
+                    32 => Ok(unsafe {
+                        ptr::read_volatile(mapping.as_ptr().byte_offset(byte_offset as isize) as *const u32) as u64
+                    }),
+                    64 => Ok(unsafe {
+                        ptr::read_volatile(mapping.as_ptr().byte_offset(byte_offset as isize) as *const u64)
+                    }),
                     _ => Err(AcpiError::InvalidGenericAddress),
                 }
             }
-            AddressSpace::SystemIo => match access_size_bits {
-                8 => Ok(self.handler.read_io_u8(self.gas.address as u16) as u64),
-                16 => Ok(self.handler.read_io_u16(self.gas.address as u16) as u64),
-                32 => Ok(self.handler.read_io_u32(self.gas.address as u16) as u64),
+            AddressSpace::SystemIo => match bit_width {
+                8 => Ok(self.handler.read_io_u8((self.gas.address + byte_offset as u64) as u16) as u64),
+                16 => Ok(self.handler.read_io_u16((self.gas.address + byte_offset as u64) as u16) as u64),
+                32 => Ok(self.handler.read_io_u32((self.gas.address + byte_offset as u64) as u16) as u64),
                 _ => Err(AcpiError::InvalidGenericAddress),
             },
             _ => {
@@ -181,33 +208,63 @@ where
         }
     }
 
+    /// Write to a GAS-mapped register
+    ///
+    /// This function assumes the GAS points at a standard integer-sized register that is aligned.
+    ///
+    /// To write other-sized registers, use [`write_part`].
     pub fn write(&self, value: u64) -> Result<(), AcpiError> {
         // TODO: see above
         let access_size_bits = gas_decode_access_bit_width(self.gas)?;
+        self.write_part(value, access_size_bits, 0)
+    }
+
+    /// Write to part of a GAS-mapped region.
+    ///
+    /// This function is useful if the GAS maps a register that is not a regular integer size.
+    ///
+    /// If writing to a pointer, the write is assumed to be aligned.
+    pub fn write_part(&self, value: u64, bit_width: u8, byte_offset: usize) -> Result<(), AcpiError> {
+        // Check to prevent reading outside the GAS
+        if byte_offset * 8 + bit_width as usize > self.gas.bit_width as usize {
+            return Err(AcpiError::InvalidGenericAddress);
+        }
+
         match self.gas.address_space {
             AddressSpace::SystemMemory => {
                 let mapping = self.mapping.as_ref().unwrap();
                 // Safety: The following writes are all to memory outside the Rust allocation system
-                match access_size_bits {
+                match bit_width {
                     8 => unsafe {
-                        ptr::write_volatile(mapping.as_mut_ptr(), value as u8);
+                        ptr::write_volatile(mapping.as_mut_ptr().byte_offset(byte_offset as isize), value as u8);
                     },
                     16 => unsafe {
-                        ptr::write_volatile(mapping.as_mut_ptr() as *mut u16, value as u16);
+                        ptr::write_volatile(
+                            mapping.as_mut_ptr().byte_offset(byte_offset as isize) as *mut u16,
+                            value as u16,
+                        );
                     },
                     32 => unsafe {
-                        ptr::write_volatile(mapping.as_mut_ptr() as *mut u32, value as u32);
+                        ptr::write_volatile(
+                            mapping.as_mut_ptr().byte_offset(byte_offset as isize) as *mut u32,
+                            value as u32,
+                        );
                     },
-                    64 => unsafe { ptr::write_volatile(mapping.as_mut_ptr() as *mut u64, value) },
+                    64 => unsafe {
+                        ptr::write_volatile(
+                            mapping.as_mut_ptr().byte_offset(byte_offset as isize) as *mut u64,
+                            value,
+                        )
+                    },
                     _ => return Err(AcpiError::InvalidGenericAddress),
                 }
                 Ok(())
             }
             AddressSpace::SystemIo => {
-                match access_size_bits {
-                    8 => self.handler.write_io_u8(self.gas.address as u16, value as u8),
-                    16 => self.handler.write_io_u16(self.gas.address as u16, value as u16),
-                    32 => self.handler.write_io_u32(self.gas.address as u16, value as u32),
+                match bit_width {
+                    8 => self.handler.write_io_u8((self.gas.address + byte_offset as u64) as u16, value as u8),
+                    16 => self.handler.write_io_u16((self.gas.address + byte_offset as u64) as u16, value as u16),
+                    32 => self.handler.write_io_u32((self.gas.address + byte_offset as u64) as u16, value as u32),
                     _ => return Err(AcpiError::InvalidGenericAddress),
                 }
                 Ok(())
@@ -220,29 +277,19 @@ where
     }
 
     /// Ignores the GAS access size and does a 16-bit read.
+    ///
+    /// Prefer to use [`read_part`].
+    #[deprecated]
     pub fn read_u16(&self, byte_offset: u64) -> u16 {
-        match self.gas.address_space {
-            AddressSpace::SystemMemory => unsafe {
-                let addr = self.mapping.as_ref().unwrap().as_mut_ptr().cast::<u16>();
-                addr.byte_offset(byte_offset as isize).read_unaligned()
-            },
-            AddressSpace::SystemIo => self.handler.read_io_u16(self.gas.address as u16 + byte_offset as u16),
-            address_space => todo!("{address_space:?}"),
-        }
+        self.read_part(16, byte_offset as usize).unwrap() as u16
     }
 
     /// Ignores the GAS access size and does a 16-bit write.
+    ///
+    /// Prefer to use [`write_part`].
+    #[deprecated]
     pub fn write_u16(&self, byte_offset: u64, value: u16) {
-        match self.gas.address_space {
-            AddressSpace::SystemMemory => unsafe {
-                let addr = self.mapping.as_ref().unwrap().as_mut_ptr().cast::<u16>();
-                addr.byte_offset(byte_offset as isize).write_unaligned(value)
-            },
-            AddressSpace::SystemIo => {
-                self.handler.write_io_u16(self.gas.address as u16 + byte_offset as u16, value)
-            }
-            address_space => todo!("{address_space:?}"),
-        }
+        self.write_part(value as u64, 16, byte_offset as usize).unwrap();
     }
 }
 
