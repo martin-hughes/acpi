@@ -8,8 +8,8 @@ use crate::{
         BaseInterpreter,
         namespace::AmlName,
         object::{Object, WrappedObject},
-        op_region::RegionHandler,
     },
+    new_region_handlers::NewRegionHandlerTrait,
 };
 
 /// See the [the docs for the `\_PIC` method](https://uefi.org/specs/ACPI/6.6/05_ACPI_Software_Programming_Model.html#pic-method).
@@ -46,7 +46,7 @@ impl From<InterruptModelUsed> for Object {
 impl<H, R> BaseInterpreter<H, R>
 where
     H: Handler,
-    R: RegionHandler + ?Sized,
+    R: NewRegionHandlerTrait + ?Sized,
 {
     /// Calls the [`\_PIC` method](https://uefi.org/specs/ACPI/6.6/05_ACPI_Software_Programming_Model.html#pic-method).
     /// The method is optional, so if it doesn't exist this function returns success. Returns `true` is the method was called, `false` if it doesn't exist.

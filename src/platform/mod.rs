@@ -12,6 +12,7 @@ use crate::{
     PhysicalMapping,
     PowerProfile,
     address::GenericAddress,
+    new_region_handlers::{NewRegionHandlerTrait, RegionHandlersTrait},
     registers::{FixedRegisters, Pm1ControlBit, Pm1EventFlags},
     sdt::{
         Signature,
@@ -24,7 +25,7 @@ use core::{alloc::Allocator, mem, ptr};
 
 /// `AcpiPlatform` is a higher-level view of the ACPI tables that makes it easier to perform common
 /// tasks with ACPI. It requires allocator support.
-pub struct AcpiPlatform<H: Handler, A: Allocator = Global> {
+pub struct AcpiPlatform<H: Handler, R: RegionHandlersTrait, A: Allocator = Global> {
     pub handler: H,
     pub tables: AcpiTables<H>,
     pub power_profile: PowerProfile,
@@ -37,36 +38,39 @@ pub struct AcpiPlatform<H: Handler, A: Allocator = Global> {
     /// interrupt model. That information is stored here, if present.
     pub processor_info: Option<ProcessorInfo<A>>,
     pub pm_timer: Option<PmTimer>,
-    pub registers: Arc<FixedRegisters<H>>,
+    pub registers: Arc<FixedRegisters>,
+    pub region_handlers: R,
 }
 
-unsafe impl<H, A> Send for AcpiPlatform<H, A>
+unsafe impl<H, R, A> Send for AcpiPlatform<H, R, A>
 where
     H: Handler,
+    R: RegionHandlersTrait,
     A: Allocator,
 {
 }
-unsafe impl<H, A> Sync for AcpiPlatform<H, A>
+unsafe impl<H, R, A> Sync for AcpiPlatform<H, R, A>
 where
     H: Handler,
+    R: RegionHandlersTrait,
     A: Allocator,
 {
 }
 
-impl<H: Handler> AcpiPlatform<H, Global> {
-    pub fn new(tables: AcpiTables<H>, handler: H) -> Result<Self, AcpiError> {
-        Self::new_in(tables, handler, alloc::alloc::Global)
+impl<H: Handler, R: RegionHandlersTrait> AcpiPlatform<H, R, Global> {
+    pub fn new(tables: AcpiTables<H>, handler: H, region_handlers: R) -> Result<Self, AcpiError> {
+        Self::new_in(tables, handler, region_handlers, alloc::alloc::Global)
     }
 }
 
-impl<H: Handler, A: Allocator + Clone> AcpiPlatform<H, A> {
-    pub fn new_in(tables: AcpiTables<H>, handler: H, allocator: A) -> Result<Self, AcpiError> {
+impl<H: Handler, R: RegionHandlersTrait, A: Allocator + Clone> AcpiPlatform<H, R, A> {
+    pub fn new_in(tables: AcpiTables<H>, handler: H, region_handlers: R, allocator: A) -> Result<Self, AcpiError> {
         let Some(fadt) = tables.find_table::<Fadt>() else { Err(AcpiError::TableNotFound(Signature::FADT))? };
         let power_profile = fadt.power_profile();
 
         let (interrupt_model, processor_info) = InterruptModel::new_in(&tables, allocator)?;
         let pm_timer = PmTimer::new(&fadt)?;
-        let registers = Arc::new(FixedRegisters::new(&fadt, handler.clone())?);
+        let registers = Arc::new(FixedRegisters::new(&fadt)?);
 
         Ok(AcpiPlatform {
             handler: handler.clone(),
@@ -77,6 +81,7 @@ impl<H: Handler, A: Allocator + Clone> AcpiPlatform<H, A> {
             processor_info,
             pm_timer,
             registers,
+            region_handlers,
         })
     }
 
@@ -93,7 +98,7 @@ impl<H: Handler, A: Allocator + Clone> AcpiPlatform<H, A> {
     }
 
     pub fn read_mode(&self) -> Result<AcpiMode, AcpiError> {
-        if self.registers.pm1_control_registers.read_bit(Pm1ControlBit::SciEnable)? {
+        if self.registers.pm1_control_registers.read_bit(Pm1ControlBit::SciEnable, &self.region_handlers)? {
             Ok(AcpiMode::Acpi)
         } else {
             Ok(AcpiMode::Legacy)
@@ -111,13 +116,13 @@ impl<H: Handler, A: Allocator + Clone> AcpiPlatform<H, A> {
     /// may be difficult to recover the platform. Hardware damage is unlikely as firmware usually
     /// has safeguards for critical events, but like with all things concerning firmware, you may
     /// not wish to rely on these.
-    pub fn enter_acpi_mode(&self) -> Result<(), AcpiError> {
+    pub fn enter_acpi_mode(&self, io_region_handler: &impl NewRegionHandlerTrait) -> Result<(), AcpiError> {
         if self.read_mode()? == AcpiMode::Acpi {
             return Ok(());
         }
 
         let Some(fadt) = self.tables.find_table::<Fadt>() else { Err(AcpiError::TableNotFound(Signature::FADT))? };
-        self.handler.write_io_u8(fadt.smi_cmd_port as u16, fadt.acpi_enable);
+        io_region_handler.write_u8(0, fadt.smi_cmd_port as u64, 0, fadt.acpi_enable)?;
 
         /*
          * We now have to spin and wait for the firmware to yield control. We'll wait up to 3

@@ -8,7 +8,6 @@ use acpi::{Handle, Handler, RawPhysicalMapping, aml::AmlError};
 use aml_test_tools::new_interpreter;
 use lock_api::RawReentrantMutex;
 use parking_lot::{RawMutex, RawThreadId};
-use pci_types::PciAddress;
 use serial_test::serial;
 use std::{
     sync::{
@@ -185,86 +184,6 @@ impl Handler for LockHandler {
 
     unsafe fn unmap_physical_region<T>(&self, _region: RawPhysicalMapping<T>) {
         // Do nothing
-    }
-
-    fn read_u8(&self, _address: usize) -> u8 {
-        unimplemented!()
-    }
-
-    fn read_u16(&self, _address: usize) -> u16 {
-        unimplemented!()
-    }
-
-    fn read_u32(&self, _address: usize) -> u32 {
-        unimplemented!()
-    }
-
-    fn read_u64(&self, _address: usize) -> u64 {
-        unimplemented!()
-    }
-
-    fn write_u8(&self, _address: usize, _value: u8) {
-        unimplemented!()
-    }
-
-    fn write_u16(&self, _address: usize, _value: u16) {
-        unimplemented!()
-    }
-
-    fn write_u32(&self, _address: usize, _value: u32) {
-        unimplemented!()
-    }
-
-    fn write_u64(&self, _address: usize, _value: u64) {
-        unimplemented!()
-    }
-
-    fn read_io_u8(&self, _port: u16) -> u8 {
-        unimplemented!()
-    }
-
-    fn read_io_u16(&self, _port: u16) -> u16 {
-        unimplemented!()
-    }
-
-    fn read_io_u32(&self, _port: u16) -> u32 {
-        unimplemented!()
-    }
-
-    fn write_io_u8(&self, _port: u16, _value: u8) {
-        unimplemented!()
-    }
-
-    fn write_io_u16(&self, _port: u16, _value: u16) {
-        unimplemented!()
-    }
-
-    fn write_io_u32(&self, _port: u16, _value: u32) {
-        unimplemented!()
-    }
-
-    fn read_pci_u8(&self, _address: PciAddress, _offset: u16) -> u8 {
-        unimplemented!()
-    }
-
-    fn read_pci_u16(&self, _address: PciAddress, _offset: u16) -> u16 {
-        unimplemented!()
-    }
-
-    fn read_pci_u32(&self, _address: PciAddress, _offset: u16) -> u32 {
-        unimplemented!()
-    }
-
-    fn write_pci_u8(&self, _address: PciAddress, _offset: u16, _value: u8) {
-        unimplemented!()
-    }
-
-    fn write_pci_u16(&self, _address: PciAddress, _offset: u16, _value: u16) {
-        unimplemented!()
-    }
-
-    fn write_pci_u32(&self, _address: PciAddress, _offset: u16, _value: u32) {
-        unimplemented!()
     }
 
     fn nanos_since_boot(&self) -> u64 {

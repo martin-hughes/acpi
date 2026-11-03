@@ -30,6 +30,7 @@ use crate::{
     Handle,
     Handler,
     PhysicalMapping,
+    new_region_handlers::{NewRegionHandlerTrait, RegionSpace},
     platform::AcpiPlatform,
     registers::{FixedRegisters, Pm1ControlBit},
     sdt::{SdtHeader, facs::Facs, fadt::Fadt},
@@ -67,7 +68,7 @@ use object::{
     ReferenceKind,
     WrappedObject,
 };
-use op_region::{OpRegion, RegionHandler, RegionSpace};
+use op_region::OpRegion;
 use pci_types::PciAddress;
 use spinning_top::Spinlock;
 
@@ -109,7 +110,7 @@ macro_rules! extract_args {
 pub struct BaseInterpreter<H, R>
 where
     H: Handler,
-    R: RegionHandler + ?Sized,
+    R: NewRegionHandlerTrait + ?Sized,
 {
     handler: H,
     pub namespace: Spinlock<Namespace>,
@@ -123,17 +124,17 @@ where
     /// to [`global_lock_mutex`] being unlocked.
     global_lock_acquisition_count: AtomicU64,
 
-    registers: Arc<FixedRegisters<H>>,
+    registers: Arc<FixedRegisters>,
     facs: Option<PhysicalMapping<H, Facs>>,
 }
 
 /// An Interpreter that does not enforce a requirement to be Send. This might be useful for
 /// uni-processor kernels, or operating systems where this crate runs in a single-threaded user-mode
 /// process.
-pub type NoSendInterpreter<H> = BaseInterpreter<H, dyn RegionHandler>;
+pub type NoSendInterpreter<H> = BaseInterpreter<H, dyn NewRegionHandlerTrait>;
 
 /// An Interpreter that is known to be Send + Sync. The version you should prefer by default.
-pub type Interpreter<H> = BaseInterpreter<H, dyn RegionHandler + Send + Sync>;
+pub type Interpreter<H> = BaseInterpreter<H, dyn NewRegionHandlerTrait + Send + Sync>;
 
 /// The value returned by the `Revision` opcode.
 const INTERPRETER_REVISION: u64 = 1;
@@ -161,7 +162,7 @@ pub const LOOP_TIMEOUT_NS: u64 = 10_000_000_000;
 impl<H, R> BaseInterpreter<H, R>
 where
     H: Handler,
-    R: RegionHandler + ?Sized,
+    R: NewRegionHandlerTrait + ?Sized,
 {
     /// Construct a new [`Interpreter`]. This does not load any tables - if you have an
     /// [`crate::AcpiTables`] already, construct an [`AcpiPlatform`] first and then use
@@ -169,7 +170,7 @@ where
     pub fn new(
         handler: H,
         dsdt_revision: u8,
-        registers: Arc<FixedRegisters<H>>,
+        registers: Arc<FixedRegisters>,
         facs: Option<PhysicalMapping<H, Facs>>,
     ) -> Self {
         info!("Initializing AML interpreter v{}", env!("CARGO_PKG_VERSION"));
@@ -190,11 +191,11 @@ where
     }
 
     /// Construct a new [`Interpreter`] with the given [`AcpiPlatform`].
-    pub fn new_from_platform(platform: &AcpiPlatform<H>) -> Result<BaseInterpreter<H, R>, AcpiError> {
+    pub fn new_from_platform(platform: &AcpiPlatform<H, RS>) -> Result<BaseInterpreter<H, R>, AcpiError> {
         fn load_table<H, R>(interpreter: &BaseInterpreter<H, R>, table: AmlTable) -> Result<(), AcpiError>
         where
             H: Handler,
-            R: RegionHandler + ?Sized,
+            R: NewRegionHandlerTrait + ?Sized,
         {
             let mapping = unsafe {
                 PhysicalMapping::<_, SdtHeader>::new(
@@ -521,15 +522,14 @@ where
                         let operand = operand.clone().unwrap_reference();
                         let token = self.object_token.lock();
 
-                        let operand = unsafe {operand.gain_mut(&token)};
+                        let operand = unsafe { operand.gain_mut(&token) };
                         let value = match operand {
-                            Object::Integer(operand) => {
-                                *operand
-                            }
-                            Object::BufferField{..} => {
-                                operand.to_integer(self.integer_size)?
-                            }
-                            _ => Err(AmlError::ObjectNotOfExpectedType { expected: ObjectType::Integer, got: operand.typ() })?
+                            Object::Integer(operand) => *operand,
+                            Object::BufferField { .. } => operand.to_integer(self.integer_size)?,
+                            _ => Err(AmlError::ObjectNotOfExpectedType {
+                                expected: ObjectType::Integer,
+                                got: operand.typ(),
+                            })?,
                         };
 
                         let new_value = match op.op {
@@ -542,10 +542,10 @@ where
                             Object::Integer(operand) => {
                                 *operand = new_value;
                             }
-                            Object::BufferField{..} => {
+                            Object::BufferField { .. } => {
                                 operand.write_buffer_field(&new_value.to_le_bytes(), &token)?;
                             }
-                            _ => unreachable!()
+                            _ => unreachable!(),
                         }
 
                         context.contribute_arg(Argument::Object(Object::Integer(new_value).wrap()));
@@ -2764,35 +2764,17 @@ where
     fn do_native_region_read(&self, region: &OpRegion, offset: usize, length: usize) -> Result<u64, AmlError> {
         trace!("Native field read. Region = {:?}, offset = {:#x}, length={:#x}", region, offset, length);
 
-        match region.space {
-            RegionSpace::SystemMemory => Ok({
-                let address = region.base as usize + offset;
-                match length {
-                    1 => self.handler.read_u8(address) as u64,
-                    2 => self.handler.read_u16(address) as u64,
-                    4 => self.handler.read_u32(address) as u64,
-                    8 => self.handler.read_u64(address),
-                    _ => panic!(),
-                }
-            }),
-            RegionSpace::SystemIO => Ok({
-                let address = region.base as u16 + offset as u16;
-                match length {
-                    1 => self.handler.read_io_u8(address) as u64,
-                    2 => self.handler.read_io_u16(address) as u64,
-                    4 => self.handler.read_io_u32(address) as u64,
-                    _ => panic!(),
-                }
-            }),
+        let region_handlers = self.region_handlers.lock();
+        let handler =
+            region_handlers.get(&region.space).ok_or(AmlError::NoHandlerForRegionAccess(region.space))?;
+
+        let address: u64 = match region.space {
+            RegionSpace::SystemMemory => 0,
+            RegionSpace::SystemIO => 0,
             RegionSpace::PciConfig => {
-                let address = self.pci_address_for_device(&region.parent_device_path)?;
-                let offset = region.base as u16 + offset as u16;
-                match length {
-                    1 => Ok(self.handler.read_pci_u8(address, offset) as u64),
-                    2 => Ok(self.handler.read_pci_u16(address, offset) as u64),
-                    4 => Ok(self.handler.read_pci_u32(address, offset) as u64),
-                    _ => panic!(),
-                }
+                panic!();
+                // TODO: could do with a 64-bit wrapper for PCI addresses...
+                //let a = self.pci_address_for_device(&region.parent_device_path)?;
             }
 
             RegionSpace::EmbeddedControl
@@ -2806,12 +2788,29 @@ where
             | RegionSpace::Oem(_) => {
                 if let Some(_handler) = self.region_handlers.lock().get(&region.space) {
                     warn!("Custom region handlers aren't actually supported yet.");
-                    Err(AmlError::LibUnimplemented)
+                    Err(AmlError::LibUnimplemented)?
                 } else {
-                    Err(AmlError::NoHandlerForRegionAccess(region.space))
+                    Err(AmlError::NoHandlerForRegionAccess(region.space))?
                 }
             }
-        }
+        };
+
+        Ok(match length {
+            1 => handler
+                .read_u8(address, region.base, offset as u64)
+                .map_err(|_| AmlError::InternalError("Better error!".to_string()))? as u64,
+            2 => handler
+                .read_u16(address, region.base, offset as u64)
+                .map_err(|_| AmlError::InternalError("Better error!".to_string()))? as u64,
+            4 => handler
+                .read_u32(address, region.base, offset as u64)
+                .map_err(|_| AmlError::InternalError("Better error!".to_string()))? as u64,
+            8 => handler
+                .read_u64(address, region.base, offset as u64)
+                .map_err(|_| AmlError::InternalError("Better error!".to_string()))?,
+            // TODO: Don't panic!
+            _ => panic!(),
+        })
     }
 
     /// Performs an actual write to an operation region. `offset` and `length` must respect the
@@ -2829,39 +2828,14 @@ where
             region, offset, length, value
         );
 
-        match region.space {
-            RegionSpace::SystemMemory => {
-                let address = region.base as usize + offset;
-                match length {
-                    1 => self.handler.write_u8(address, value as u8),
-                    2 => self.handler.write_u16(address, value as u16),
-                    4 => self.handler.write_u32(address, value as u32),
-                    8 => self.handler.write_u64(address, value),
-                    _ => panic!(),
-                }
-                Ok(())
-            }
-            RegionSpace::SystemIO => {
-                let address = region.base as u16 + offset as u16;
-                match length {
-                    1 => self.handler.write_io_u8(address, value as u8),
-                    2 => self.handler.write_io_u16(address, value as u16),
-                    4 => self.handler.write_io_u32(address, value as u32),
-                    _ => panic!(),
-                }
-                Ok(())
-            }
-            RegionSpace::PciConfig => {
-                let address = self.pci_address_for_device(&region.parent_device_path)?;
-                let offset = region.base as u16 + offset as u16;
-                match length {
-                    1 => self.handler.write_pci_u8(address, offset, value as u8),
-                    2 => self.handler.write_pci_u16(address, offset, value as u16),
-                    4 => self.handler.write_pci_u32(address, offset, value as u32),
-                    _ => panic!(),
-                }
-                Ok(())
-            }
+        let region_handlers = self.region_handlers.lock();
+        let handler =
+            region_handlers.get(&region.space).ok_or(AmlError::NoHandlerForRegionAccess(region.space))?;
+
+        let address = match region.space {
+            RegionSpace::SystemMemory => 0,
+            RegionSpace::SystemIO => 0,
+            RegionSpace::PciConfig => todo!(),
 
             RegionSpace::EmbeddedControl
             | RegionSpace::SmBus
@@ -2874,12 +2848,31 @@ where
             | RegionSpace::Oem(_) => {
                 if let Some(_handler) = self.region_handlers.lock().get(&region.space) {
                     warn!("Custom region handlers aren't actually supported yet.");
-                    Err(AmlError::LibUnimplemented)
+                    Err(AmlError::LibUnimplemented)?
                 } else {
-                    Err(AmlError::NoHandlerForRegionAccess(region.space))
+                    Err(AmlError::NoHandlerForRegionAccess(region.space))?
                 }
             }
+        };
+
+        match length {
+            1 => handler
+                .write_u8(address, region.base, offset as u64, value as u8)
+                .map_err(|_| AmlError::InternalError("Better error!".to_string()))?,
+            2 => handler
+                .write_u16(address, region.base, offset as u64, value as u16)
+                .map_err(|_| AmlError::InternalError("Better error!".to_string()))?,
+            4 => handler
+                .write_u32(address, region.base, offset as u64, value as u32)
+                .map_err(|_| AmlError::InternalError("Better error!".to_string()))?,
+            8 => handler
+                .write_u64(address, region.base, offset as u64, value)
+                .map_err(|_| AmlError::InternalError("Better error!".to_string()))?,
+            // TODO: Don't panic!
+            _ => panic!(),
         }
+
+        Ok(())
     }
 
     fn pci_address_for_device(&self, path: &AmlName) -> Result<PciAddress, AmlError> {

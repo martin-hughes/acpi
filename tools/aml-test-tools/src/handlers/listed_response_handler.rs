@@ -1,7 +1,9 @@
+// TODO: Delete this file
+// (it's being used for reference right now)
+
 //! A basic [`Handler`] that returns an expected result from a provided sequence of commands.
 
 use acpi::{Handle, Handler, RawPhysicalMapping, aml::AmlError};
-use pci_types::PciAddress;
 use std::sync::{Arc, atomic::AtomicUsize};
 
 /// Commands that may be received by a [handler](Handler) which return a value from the handler.
@@ -15,16 +17,6 @@ use std::sync::{Arc, atomic::AtomicUsize};
 pub enum AcpiCommands {
     /// A stand-in for all commands that don't return a value.
     Skip(),
-    ReadU8(u8),
-    ReadU16(u16),
-    ReadU32(u32),
-    ReadU64(u64),
-    ReadIoU8(u8),
-    ReadIoU16(u16),
-    ReadIoU32(u32),
-    ReadPciU8(u8),
-    ReadPciU16(u16),
-    ReadPciU32(u32),
     NanosSinceBoot(u64),
 }
 
@@ -92,86 +84,6 @@ impl Handler for ListedResponseHandler {
 
     unsafe fn unmap_physical_region<T>(&self, _region: RawPhysicalMapping<T>) {}
 
-    fn read_u8(&self, _address: usize) -> u8 {
-        check_and_get_result!(self, ReadU8)
-    }
-
-    fn read_u16(&self, _address: usize) -> u16 {
-        check_and_get_result!(self, ReadU16)
-    }
-
-    fn read_u32(&self, _address: usize) -> u32 {
-        check_and_get_result!(self, ReadU32)
-    }
-
-    fn read_u64(&self, _address: usize) -> u64 {
-        check_and_get_result!(self, ReadU64)
-    }
-
-    fn write_u8(&self, _address: usize, _value: u8) {
-        check_is_skipped!(self)
-    }
-
-    fn write_u16(&self, _address: usize, _value: u16) {
-        check_is_skipped!(self)
-    }
-
-    fn write_u32(&self, _address: usize, _value: u32) {
-        check_is_skipped!(self)
-    }
-
-    fn write_u64(&self, _address: usize, _value: u64) {
-        check_is_skipped!(self)
-    }
-
-    fn read_io_u8(&self, _port: u16) -> u8 {
-        check_and_get_result!(self, ReadIoU8)
-    }
-
-    fn read_io_u16(&self, _port: u16) -> u16 {
-        check_and_get_result!(self, ReadIoU16)
-    }
-
-    fn read_io_u32(&self, _port: u16) -> u32 {
-        check_and_get_result!(self, ReadIoU32)
-    }
-
-    fn write_io_u8(&self, _port: u16, _value: u8) {
-        check_is_skipped!(self)
-    }
-
-    fn write_io_u16(&self, _port: u16, _value: u16) {
-        check_is_skipped!(self)
-    }
-
-    fn write_io_u32(&self, _port: u16, _value: u32) {
-        check_is_skipped!(self)
-    }
-
-    fn read_pci_u8(&self, _address: PciAddress, _offset: u16) -> u8 {
-        check_and_get_result!(self, ReadPciU8)
-    }
-
-    fn read_pci_u16(&self, _address: PciAddress, _offset: u16) -> u16 {
-        check_and_get_result!(self, ReadPciU16)
-    }
-
-    fn read_pci_u32(&self, _address: PciAddress, _offset: u16) -> u32 {
-        check_and_get_result!(self, ReadPciU32)
-    }
-
-    fn write_pci_u8(&self, _address: PciAddress, _offset: u16, _value: u8) {
-        check_is_skipped!(self)
-    }
-
-    fn write_pci_u16(&self, _address: PciAddress, _offset: u16, _value: u16) {
-        check_is_skipped!(self)
-    }
-
-    fn write_pci_u32(&self, _address: PciAddress, _offset: u16, _value: u32) {
-        check_is_skipped!(self)
-    }
-
     fn nanos_since_boot(&self) -> u64 {
         check_and_get_result!(self, NanosSinceBoot)
     }
@@ -205,43 +117,43 @@ mod test {
 
     #[test]
     fn handler_basic_functions() {
-        let test_commands = vec![AcpiCommands::ReadIoU8(2), AcpiCommands::Skip()];
+        let test_commands = vec![AcpiCommands::NanosSinceBoot(2), AcpiCommands::Skip()];
 
         let handler = ListedResponseHandler::new(test_commands);
-        handler.read_io_u8(2);
-        handler.write_io_u16(3, 4);
+        handler.nanos_since_boot();
+        handler.stall(3);
     }
 
     #[test]
     #[should_panic]
     fn handler_fails_for_wrong_command() {
-        let test_commands = vec![AcpiCommands::ReadIoU8(2), AcpiCommands::ReadIoU8(3)];
+        let test_commands = vec![AcpiCommands::NanosSinceBoot(2), AcpiCommands::Skip()];
 
         let handler = ListedResponseHandler::new(test_commands);
-        handler.read_io_u8(3);
+        handler.stall(3);
         // We shouldn't actually make it to this command, but it makes sure the handler doesn't panic for having too few
         // commands sent to it.
-        handler.write_io_u16(3, 4);
+        handler.stall(4);
     }
 
     #[test]
     #[should_panic]
     fn handler_fails_for_too_many_commands() {
-        let test_commands = vec![AcpiCommands::ReadIoU8(2), AcpiCommands::Skip()];
+        let test_commands = vec![AcpiCommands::NanosSinceBoot(2), AcpiCommands::Skip()];
 
         let handler = ListedResponseHandler::new(test_commands);
-        handler.read_io_u8(2);
-        handler.write_io_u16(3, 4);
-        handler.read_io_u8(5);
+        handler.nanos_since_boot();
+        handler.stall(3);
+        handler.stall(4);
     }
 
     #[test]
     #[should_panic]
     fn handler_fails_for_too_few_commands() {
-        let test_commands = vec![AcpiCommands::ReadIoU8(2), AcpiCommands::Skip()];
+        let test_commands = vec![AcpiCommands::NanosSinceBoot(3), AcpiCommands::Skip()];
 
         let handler = ListedResponseHandler::new(test_commands);
-        handler.read_io_u8(2);
+        handler.nanos_since_boot();
     }
 
     #[test]
@@ -249,6 +161,6 @@ mod test {
     fn check_handler_fails_gracefully_for_no_commands() {
         let test_commands: Vec<AcpiCommands> = vec![];
         let handler = ListedResponseHandler::new(test_commands);
-        handler.read_io_u8(2);
+        handler.nanos_since_boot();
     }
 }

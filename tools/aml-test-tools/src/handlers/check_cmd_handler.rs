@@ -1,7 +1,6 @@
 //! A wrapper around another [`Handler`] that checks for the correct sequence of commands in a test.
 
 use acpi::{Handle, Handler, RawPhysicalMapping, aml::AmlError};
-use pci_types::PciAddress;
 use std::sync::{
     Arc,
     atomic::{AtomicUsize, Ordering::Relaxed},
@@ -15,26 +14,6 @@ use std::sync::{
 pub enum AcpiCommands {
     MapPhysicalRegion(usize, usize),
     UnmapPhysicalRegion(usize),
-    ReadU8(usize),
-    ReadU16(usize),
-    ReadU32(usize),
-    ReadU64(usize),
-    WriteU8(usize, u8),
-    WriteU16(usize, u16),
-    WriteU32(usize, u32),
-    WriteU64(usize, u64),
-    ReadIoU8(u16),
-    ReadIoU16(u16),
-    ReadIoU32(u16),
-    WriteIoU8(u16, u8),
-    WriteIoU16(u16, u16),
-    WriteIoU32(u16, u32),
-    ReadPciU8(PciAddress, u16),
-    ReadPciU16(PciAddress, u16),
-    ReadPciU32(PciAddress, u16),
-    WritePciU8(PciAddress, u16, u8),
-    WritePciU16(PciAddress, u16, u16),
-    WritePciU32(PciAddress, u16, u32),
     NanosSinceBoot,
     Stall(u64),
     Sleep(u64),
@@ -116,106 +95,6 @@ where
         }
     }
 
-    fn read_u8(&self, address: usize) -> u8 {
-        self.check_command(AcpiCommands::ReadU8(address));
-        self.next_handler.read_u8(address)
-    }
-
-    fn read_u16(&self, address: usize) -> u16 {
-        self.check_command(AcpiCommands::ReadU16(address));
-        self.next_handler.read_u16(address)
-    }
-
-    fn read_u32(&self, address: usize) -> u32 {
-        self.check_command(AcpiCommands::ReadU32(address));
-        self.next_handler.read_u32(address)
-    }
-
-    fn read_u64(&self, address: usize) -> u64 {
-        self.check_command(AcpiCommands::ReadU64(address));
-        self.next_handler.read_u64(address)
-    }
-
-    fn write_u8(&self, address: usize, value: u8) {
-        self.check_command(AcpiCommands::WriteU8(address, value));
-        self.next_handler.write_u8(address, value);
-    }
-
-    fn write_u16(&self, address: usize, value: u16) {
-        self.check_command(AcpiCommands::WriteU16(address, value));
-        self.next_handler.write_u16(address, value);
-    }
-
-    fn write_u32(&self, address: usize, value: u32) {
-        self.check_command(AcpiCommands::WriteU32(address, value));
-        self.next_handler.write_u32(address, value);
-    }
-
-    fn write_u64(&self, address: usize, value: u64) {
-        self.check_command(AcpiCommands::WriteU64(address, value));
-        self.next_handler.write_u64(address, value);
-    }
-
-    fn read_io_u8(&self, port: u16) -> u8 {
-        self.check_command(AcpiCommands::ReadIoU8(port));
-        self.next_handler.read_io_u8(port)
-    }
-
-    fn read_io_u16(&self, port: u16) -> u16 {
-        self.check_command(AcpiCommands::ReadIoU16(port));
-        self.next_handler.read_io_u16(port)
-    }
-
-    fn read_io_u32(&self, port: u16) -> u32 {
-        self.check_command(AcpiCommands::ReadIoU32(port));
-        self.next_handler.read_io_u32(port)
-    }
-
-    fn write_io_u8(&self, port: u16, value: u8) {
-        self.check_command(AcpiCommands::WriteIoU8(port, value));
-        self.next_handler.write_io_u8(port, value);
-    }
-
-    fn write_io_u16(&self, port: u16, value: u16) {
-        self.check_command(AcpiCommands::WriteIoU16(port, value));
-        self.next_handler.write_io_u16(port, value);
-    }
-
-    fn write_io_u32(&self, port: u16, value: u32) {
-        self.check_command(AcpiCommands::WriteIoU32(port, value));
-        self.next_handler.write_io_u32(port, value);
-    }
-
-    fn read_pci_u8(&self, address: PciAddress, offset: u16) -> u8 {
-        self.check_command(AcpiCommands::ReadPciU8(address, offset));
-        self.next_handler.read_pci_u8(address, offset)
-    }
-
-    fn read_pci_u16(&self, address: PciAddress, offset: u16) -> u16 {
-        self.check_command(AcpiCommands::ReadPciU16(address, offset));
-        self.next_handler.read_pci_u16(address, offset)
-    }
-
-    fn read_pci_u32(&self, address: PciAddress, offset: u16) -> u32 {
-        self.check_command(AcpiCommands::ReadPciU32(address, offset));
-        self.next_handler.read_pci_u32(address, offset)
-    }
-
-    fn write_pci_u8(&self, address: PciAddress, offset: u16, value: u8) {
-        self.check_command(AcpiCommands::WritePciU8(address, offset, value));
-        self.next_handler.write_pci_u8(address, offset, value);
-    }
-
-    fn write_pci_u16(&self, address: PciAddress, offset: u16, value: u16) {
-        self.check_command(AcpiCommands::WritePciU16(address, offset, value));
-        self.next_handler.write_pci_u16(address, offset, value);
-    }
-
-    fn write_pci_u32(&self, address: PciAddress, offset: u16, value: u32) {
-        self.check_command(AcpiCommands::WritePciU32(address, offset, value));
-        self.next_handler.write_pci_u32(address, offset, value);
-    }
-
     fn nanos_since_boot(&self) -> u64 {
         self.check_command(AcpiCommands::NanosSinceBoot);
         self.next_handler.nanos_since_boot()
@@ -254,43 +133,43 @@ mod test {
 
     #[test]
     fn handler_basic_functions() {
-        let test_commands = vec![AcpiCommands::ReadIoU8(2), AcpiCommands::WriteIoU16(3, 4)];
+        let test_commands = vec![AcpiCommands::NanosSinceBoot, AcpiCommands::Sleep(1000)];
 
         let handler = CheckCommandHandler::new(test_commands, NullHandler {});
-        handler.read_io_u8(2);
-        handler.write_io_u16(3, 4);
+        handler.nanos_since_boot();
+        handler.sleep(1000);
     }
 
     #[test]
     #[should_panic]
     fn handler_fails_for_wrong_command() {
-        let test_commands = vec![AcpiCommands::ReadIoU8(2), AcpiCommands::WriteIoU16(3, 4)];
+        let test_commands = vec![AcpiCommands::Sleep(1001), AcpiCommands::Stall(1000)];
 
         let handler = CheckCommandHandler::new(test_commands, NullHandler {});
-        handler.read_io_u8(3);
+        handler.sleep(1000);
         // We shouldn't actually make it to this command, but it makes sure the handler doesn't panic for having too few
         // commands sent to it.
-        handler.write_io_u16(3, 4);
+        handler.stall(1000);
     }
 
     #[test]
     #[should_panic]
     fn handler_fails_for_too_many_commands() {
-        let test_commands = vec![AcpiCommands::ReadIoU8(2), AcpiCommands::WriteIoU16(3, 4)];
+        let test_commands = vec![AcpiCommands::NanosSinceBoot, AcpiCommands::Sleep(1000)];
 
         let handler = CheckCommandHandler::new(test_commands, NullHandler {});
-        handler.read_io_u8(2);
-        handler.write_io_u16(3, 4);
-        handler.read_io_u8(5);
+        handler.nanos_since_boot();
+        handler.sleep(1000);
+        handler.stall(5);
     }
 
     #[test]
     #[should_panic]
     fn handler_fails_for_too_few_commands() {
-        let test_commands = vec![AcpiCommands::ReadIoU8(2), AcpiCommands::WriteIoU16(3, 4)];
+        let test_commands = vec![AcpiCommands::NanosSinceBoot, AcpiCommands::Sleep(1000)];
 
         let handler = CheckCommandHandler::new(test_commands, NullHandler {});
-        handler.read_io_u8(2);
+        handler.nanos_since_boot();
     }
 
     #[test]
@@ -298,6 +177,6 @@ mod test {
     fn check_handler_fails_gracefully_for_no_commands() {
         let test_commands: Vec<AcpiCommands> = vec![];
         let handler = CheckCommandHandler::new(test_commands, NullHandler {});
-        handler.read_io_u8(2);
+        handler.nanos_since_boot();
     }
 }

@@ -55,6 +55,7 @@ extern crate alloc;
 pub mod address;
 #[cfg(feature = "aml")]
 pub mod aml;
+pub mod new_region_handlers;
 pub mod physical_mapping;
 #[cfg(feature = "alloc")]
 pub mod platform;
@@ -385,7 +386,7 @@ pub trait Handler: Clone {
 
     // TODO: maybe we should map stuff ourselves in the AML interpreter and do this internally?
     // Maybe provide a hook for tracing the IO / emit trace events ourselves if we do do that?
-    fn read_u8(&self, address: usize) -> u8;
+    /*fn read_u8(&self, address: usize) -> u8;
     fn read_u16(&self, address: usize) -> u16;
     fn read_u32(&self, address: usize) -> u32;
     fn read_u64(&self, address: usize) -> u64;
@@ -393,10 +394,10 @@ pub trait Handler: Clone {
     fn write_u8(&self, address: usize, value: u8);
     fn write_u16(&self, address: usize, value: u16);
     fn write_u32(&self, address: usize, value: u32);
-    fn write_u64(&self, address: usize, value: u64);
+    fn write_u64(&self, address: usize, value: u64);*/
 
     // TODO: would be nice to provide defaults that just do the actual port IO on x86?
-    fn read_io_u8(&self, port: u16) -> u8;
+    /*fn read_io_u8(&self, port: u16) -> u8;
     fn read_io_u16(&self, port: u16) -> u16;
     fn read_io_u32(&self, port: u16) -> u32;
 
@@ -410,7 +411,7 @@ pub trait Handler: Clone {
 
     fn write_pci_u8(&self, address: PciAddress, offset: u16, value: u8);
     fn write_pci_u16(&self, address: PciAddress, offset: u16, value: u16);
-    fn write_pci_u32(&self, address: PciAddress, offset: u16, value: u32);
+    fn write_pci_u32(&self, address: PciAddress, offset: u16, value: u32);*/
 
     /// Returns a monotonically-increasing value of nanoseconds.
     fn nanos_since_boot(&self) -> u64;
@@ -483,7 +484,7 @@ impl<H: Handler> Handler for &H {
     unsafe fn unmap_physical_region<T>(&self, region: RawPhysicalMapping<T>) {
         unsafe { (**self).unmap_physical_region(region) }
     }
-
+/*
     #[inline]
     fn read_u8(&self, address: usize) -> u8 {
         (**self).read_u8(address)
@@ -582,7 +583,7 @@ impl<H: Handler> Handler for &H {
     #[inline]
     fn write_pci_u32(&self, address: PciAddress, offset: u16, value: u32) {
         (**self).write_pci_u32(address, offset, value)
-    }
+    }*/
 
     #[inline]
     fn nanos_since_boot(&self) -> u64 {

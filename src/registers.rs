@@ -1,31 +1,28 @@
-use crate::{AcpiError, Handler, address::MappedGas, sdt::fadt::Fadt};
+use crate::{
+    AcpiError,
+    address::GenericAddress,
+    new_region_handlers::{RegionHandlers, RegionHandlersTrait},
+    sdt::fadt::Fadt,
+};
 use bit_field::BitField;
 use bitflags::{Flags, bitflags};
 
-pub struct FixedRegisters<H: Handler> {
-    pub pm1_event_registers: Pm1EventRegisterBlock<H>,
-    pub pm1_control_registers: Pm1ControlRegisterBlock<H>,
+pub struct FixedRegisters {
+    pub pm1_event_registers: Pm1EventRegisterBlock,
+    pub pm1_control_registers: Pm1ControlRegisterBlock,
 }
 
-impl<H> FixedRegisters<H>
-where
-    H: Handler,
-{
-    pub fn new(fadt: &Fadt, handler: H) -> Result<FixedRegisters<H>, AcpiError> {
+impl FixedRegisters {
+    pub fn new(fadt: &Fadt) -> Result<FixedRegisters, AcpiError> {
+        // TODO: Need to update with Isaac's split registers.
         let pm1_event_registers = {
-            let pm1a = unsafe { MappedGas::map_gas(fadt.pm1a_event_block()?, handler.clone())? };
-            let pm1b = match fadt.pm1b_event_block()? {
-                Some(gas) => Some(unsafe { MappedGas::map_gas(gas, handler.clone())? }),
-                None => None,
-            };
+            let pm1a = fadt.pm1a_event_block()?;
+            let pm1b = fadt.pm1b_event_block()?;
             Pm1EventRegisterBlock { pm1_event_length: fadt.pm1_event_length as usize, pm1a, pm1b }
         };
         let pm1_control_registers = {
-            let pm1a = unsafe { MappedGas::map_gas(fadt.pm1a_control_block()?, handler.clone())? };
-            let pm1b = match fadt.pm1b_control_block()? {
-                Some(gas) => Some(unsafe { MappedGas::map_gas(gas, handler)? }),
-                None => None,
-            };
+            let pm1a = fadt.pm1a_control_block()?;
+            let pm1b = fadt.pm1b_control_block()?;
             Pm1ControlRegisterBlock { pm1a, pm1b }
         };
 
@@ -41,10 +38,10 @@ where
 /// The register grouping contains two registers - a `STS` status register that can be read to
 /// determine if an event has fired (and written to clear), and an `EN` enabling register to
 /// control whether an event should fire.
-pub struct Pm1EventRegisterBlock<H: Handler> {
+pub struct Pm1EventRegisterBlock {
     pub pm1_event_length: usize,
-    pub pm1a: MappedGas<H>,
-    pub pm1b: Option<MappedGas<H>>,
+    pub pm1a: GenericAddress,
+    pub pm1b: Option<GenericAddress>,
 }
 
 bitflags! {
@@ -60,10 +57,7 @@ bitflags! {
     }
 }
 
-impl<H> Pm1EventRegisterBlock<H>
-where
-    H: Handler,
-{
+impl Pm1EventRegisterBlock {
     /// Sets the specified flags and unsets the other flags.
     /// When an event happens, the corresponding status bit is always set.
     /// These flags control whether an *interrupt* is triggered as a result of that status bit being set.
@@ -71,37 +65,41 @@ where
     /// For most flags you set to enable and clear to disable.
     /// But for PCIe wake the flag is set to disable and clear to enable.
     pub fn set_enable_flags(&self, events: Pm1EventFlags) {
-        let enable_offset = self.pm1_event_length as u64 / 2;
-        let bits = events.known_bits();
-        self.pm1a.write_u16(enable_offset, bits);
-        if let Some(pm1b) = &self.pm1b {
-            pm1b.write_u16(enable_offset, bits);
-        }
+        let _enable_offset = self.pm1_event_length as u64 / 2;
+        let _bits = events.known_bits();
+        todo!(); // Merge with Isaac's changes.
+        //self.pm1a.write_u16(enable_offset, bits);
+        //if let Some(pm1b) = &self.pm1b {
+        //    pm1b.write_u16(enable_offset, bits);
+        //}
     }
 
     pub fn pending_events(&self) -> Pm1EventFlags {
-        let bits = {
-            let mut bits = self.pm1a.read_u16(0);
-            if let Some(pm1b) = &self.pm1b {
-                bits |= pm1b.read_u16(0);
-            }
-            bits
-        };
-        Pm1EventFlags::from_bits_retain(bits)
+        todo!();
+        //let bits = {
+        //todo!(); // Merge with Isaac's changes.
+        //let mut bits = self.pm1a.read_u16(0);
+        //if let Some(pm1b) = &self.pm1b {
+        //    bits |= pm1b.read_u16(0);
+        //}
+        //bits
+        //};
+        //Pm1EventFlags::from_bits_retain(bits)
     }
 
     pub fn clear_events(&self, events: Pm1EventFlags) {
-        let bits = events.known_bits();
-        self.pm1a.write_u16(0, bits);
-        if let Some(pm1b) = &self.pm1b {
-            pm1b.write_u16(0, bits);
-        }
+        let _bits = events.known_bits();
+        todo!(); // Merge with Isaac's changes.
+        //self.pm1a.write_u16(0, bits);
+        //if let Some(pm1b) = &self.pm1b {
+        //    pm1b.write_u16(0, bits);
+        //}
     }
 }
 
-pub struct Pm1ControlRegisterBlock<H: Handler> {
-    pub pm1a: MappedGas<H>,
-    pub pm1b: Option<MappedGas<H>>,
+pub struct Pm1ControlRegisterBlock {
+    pub pm1a: GenericAddress,
+    pub pm1b: Option<GenericAddress>,
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -122,11 +120,12 @@ pub enum Pm1ControlBit {
     SleepEnable = 13,
 }
 
-impl<H> Pm1ControlRegisterBlock<H>
-where
-    H: Handler,
-{
-    pub fn read_bit(&self, bit: Pm1ControlBit) -> Result<bool, AcpiError> {
+impl Pm1ControlRegisterBlock {
+    pub fn read_bit(
+        &self,
+        bit: Pm1ControlBit,
+        region_handlers: &impl RegionHandlersTrait,
+    ) -> Result<bool, AcpiError> {
         let control_bit = match bit {
             Pm1ControlBit::SciEnable => 0,
             Pm1ControlBit::BusMasterWake => 1,
@@ -134,13 +133,18 @@ where
             Pm1ControlBit::SleepEnable => 13,
         };
 
-        let pm1a = self.pm1a.read()?;
-        let pm1b = if let Some(ref pm1b) = self.pm1b { pm1b.read()? } else { 0 };
+        let pm1a = region_handlers.read_gas(&self.pm1a)?;
+        let pm1b = if let Some(ref pm1b) = self.pm1b { region_handlers.read_gas(&pm1b)? } else { 0 };
         let pm1 = pm1a | pm1b;
         Ok(pm1.get_bit(control_bit))
     }
 
-    pub fn set_bit(&self, bit: Pm1ControlBit, set: bool) -> Result<(), AcpiError> {
+    pub fn set_bit(
+        &self,
+        bit: Pm1ControlBit,
+        set: bool,
+        region_handlers: &impl RegionHandlersTrait,
+    ) -> Result<(), AcpiError> {
         let control_bit = match bit {
             Pm1ControlBit::SciEnable => 0,
             Pm1ControlBit::BusMasterWake => 1,
@@ -148,28 +152,28 @@ where
             Pm1ControlBit::SleepEnable => 13,
         };
 
-        let mut pm1a = self.pm1a.read()?;
+        let mut pm1a = region_handlers.read_gas(&self.pm1a)?;
         pm1a.set_bit(control_bit, set);
-        self.pm1a.write(pm1a)?;
+        region_handlers.write_gas(&self.pm1a, pm1a);
 
         if let Some(pm1b) = &self.pm1b {
-            let mut value = pm1b.read()?;
+            let mut value = region_handlers.read_gas(pm1b)?;
             value.set_bit(control_bit, set);
-            pm1b.write(value)?;
+            region_handlers.write_gas(pm1b, value);
         }
 
         Ok(())
     }
 
-    pub fn set_sleep_typ(&self, value: u8) -> Result<(), AcpiError> {
-        let mut pm1a = self.pm1a.read()?;
+    pub fn set_sleep_typ(&self, value: u8, region_handlers: &RegionHandlers) -> Result<(), AcpiError> {
+        let mut pm1a = region_handlers.read_gas(&self.pm1a)?;
         pm1a.set_bits(10..13, value as u64);
-        self.pm1a.write(pm1a)?;
+        region_handlers.write_gas(&self.pm1a, pm1a);
 
         if let Some(pm1b) = &self.pm1b {
-            let mut pm1b_value = pm1b.read()?;
+            let mut pm1b_value = region_handlers.read_gas(pm1b)?;
             pm1b_value.set_bits(10..13, value as u64);
-            pm1b.write(pm1b_value)?;
+            region_handlers.write_gas(pm1b, pm1b_value);
         }
 
         Ok(())

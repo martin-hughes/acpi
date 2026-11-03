@@ -1,9 +1,7 @@
 //! ACPI defines a Generic Address Structure (GAS), which provides a versatile way to describe register locations
 //! in a wide range of address spaces.
 
-use crate::{AcpiError, Handler, PhysicalMapping};
-use core::ptr;
-use log::warn;
+use crate::AcpiError;
 
 /// This is the raw form of a Generic Address Structure, and follows the layout found in the ACPI tables.
 #[derive(Clone, Copy, Debug)]
@@ -119,11 +117,13 @@ impl GenericAddress {
         StandardAccessSize::try_from(self.access_size)
     }
 }
-
+/*
 pub struct MappedGas<H: Handler> {
     gas: GenericAddress,
-    handler: H,
-    mapping: Option<PhysicalMapping<H, u8>>,
+    region_handler: NewRegionHandler,
+
+    // TODO: Move into region_handler?
+    _mapping: Option<PhysicalMapping<H, u8>>,
 }
 
 impl<H> MappedGas<H>
@@ -135,15 +135,26 @@ where
     /// ### Safety
     /// The supplied `GenericAddress` must be a valid GAS and all subsequent reads and writes must
     /// be valid.
-    pub unsafe fn map_gas(gas: GenericAddress, handler: H) -> Result<MappedGas<H>, AcpiError> {
+    pub unsafe fn map_gas(
+        gas: GenericAddress,
+        handler: H,
+        _region_handlers: &impl RegionHandlersTrait,
+    ) -> Result<MappedGas<H>, AcpiError> {
         match gas.address_space {
             AddressSpace::SystemMemory => {
                 // TODO: how to know total size needed?
                 let mapping =
                     unsafe { PhysicalMapping::<_, u8>::new(gas.address as usize, 0x1000, handler.clone()) };
-                Ok(MappedGas { gas, handler, mapping: Some(mapping) })
+                gas.address_space
+                Ok(MappedGas {
+                    gas,
+                    region_handler: NewRegionHandler::SystemMemory(SystemMemoryHandler {}),
+                    _mapping: Some(mapping),
+                })
             }
-            AddressSpace::SystemIo => Ok(MappedGas { gas, handler, mapping: None }),
+            AddressSpace::SystemIo => {
+                Ok(MappedGas { gas, region_handler: NewRegionHandler::SystemIO, _mapping: None })
+            }
             other => {
                 warn!("Mapping a GAS in address space {:?} is not supported!", other);
                 Err(AcpiError::LibUnimplemented)
@@ -157,95 +168,39 @@ where
          * support bit offsets and multiple reads etc.
          */
         let access_size_bits = gas_decode_access_bit_width(self.gas)?;
-        match self.gas.address_space {
-            AddressSpace::SystemMemory => {
-                let mapping = self.mapping.as_ref().unwrap();
-                match access_size_bits {
-                    8 => Ok(unsafe { ptr::read_volatile(mapping.as_ptr()) as u64 }),
-                    16 => Ok(unsafe { ptr::read_volatile(mapping.as_ptr() as *const u16) as u64 }),
-                    32 => Ok(unsafe { ptr::read_volatile(mapping.as_ptr() as *const u32) as u64 }),
-                    64 => Ok(unsafe { ptr::read_volatile(mapping.as_ptr() as *const u64) }),
-                    _ => Err(AcpiError::InvalidGenericAddress),
-                }
-            }
-            AddressSpace::SystemIo => match access_size_bits {
-                8 => Ok(self.handler.read_io_u8(self.gas.address as u16) as u64),
-                16 => Ok(self.handler.read_io_u16(self.gas.address as u16) as u64),
-                32 => Ok(self.handler.read_io_u32(self.gas.address as u16) as u64),
-                _ => Err(AcpiError::InvalidGenericAddress),
-            },
-            _ => {
-                warn!("Read from GAS with address space {:?} is not supported. Ignored.", self.gas.address_space);
-                Err(AcpiError::LibUnimplemented)
-            }
+        match access_size_bits {
+            8 => Ok(self.region_handler.read_u8(self.gas.address, 0, 0)? as u64),
+            16 => Ok(self.region_handler.read_u16(self.gas.address, 0, 0)? as u64),
+            32 => Ok(self.region_handler.read_u32(self.gas.address, 0, 0)? as u64),
+            64 => Ok(self.region_handler.read_u64(self.gas.address, 0, 0)?),
+            _ => Err(AcpiError::InvalidGenericAddress),
         }
     }
 
     pub fn write(&self, value: u64) -> Result<(), AcpiError> {
         // TODO: see above
         let access_size_bits = gas_decode_access_bit_width(self.gas)?;
-        match self.gas.address_space {
-            AddressSpace::SystemMemory => {
-                let mapping = self.mapping.as_ref().unwrap();
-                // Safety: The following writes are all to memory outside the Rust allocation system
-                match access_size_bits {
-                    8 => unsafe {
-                        ptr::write_volatile(mapping.as_mut_ptr(), value as u8);
-                    },
-                    16 => unsafe {
-                        ptr::write_volatile(mapping.as_mut_ptr() as *mut u16, value as u16);
-                    },
-                    32 => unsafe {
-                        ptr::write_volatile(mapping.as_mut_ptr() as *mut u32, value as u32);
-                    },
-                    64 => unsafe { ptr::write_volatile(mapping.as_mut_ptr() as *mut u64, value) },
-                    _ => return Err(AcpiError::InvalidGenericAddress),
-                }
-                Ok(())
-            }
-            AddressSpace::SystemIo => {
-                match access_size_bits {
-                    8 => self.handler.write_io_u8(self.gas.address as u16, value as u8),
-                    16 => self.handler.write_io_u16(self.gas.address as u16, value as u16),
-                    32 => self.handler.write_io_u32(self.gas.address as u16, value as u32),
-                    _ => return Err(AcpiError::InvalidGenericAddress),
-                }
-                Ok(())
-            }
-            _ => {
-                warn!("Write to GAS with address space {:?} is not supported. Ignored.", self.gas.address_space);
-                Err(AcpiError::LibUnimplemented)
-            }
+
+        match access_size_bits {
+            8 => self.region_handler.write_u8(self.gas.address, 0, 0, value as u8),
+            16 => self.region_handler.write_u16(self.gas.address, 0, 0, value as u16),
+            32 => self.region_handler.write_u32(self.gas.address, 0, 0, value as u32),
+            64 => self.region_handler.write_u64(self.gas.address, 0, 0, value),
+            _ => Err(AcpiError::InvalidGenericAddress),
         }
     }
 
     /// Ignores the GAS access size and does a 16-bit read.
-    pub fn read_u16(&self, byte_offset: u64) -> u16 {
-        match self.gas.address_space {
-            AddressSpace::SystemMemory => unsafe {
-                let addr = self.mapping.as_ref().unwrap().as_mut_ptr().cast::<u16>();
-                addr.byte_offset(byte_offset as isize).read_unaligned()
-            },
-            AddressSpace::SystemIo => self.handler.read_io_u16(self.gas.address as u16 + byte_offset as u16),
-            address_space => todo!("{address_space:?}"),
-        }
+    pub fn read_u16(&self, _byte_offset: u64) -> u16 {
+        todo!();
     }
 
     /// Ignores the GAS access size and does a 16-bit write.
-    pub fn write_u16(&self, byte_offset: u64, value: u16) {
-        match self.gas.address_space {
-            AddressSpace::SystemMemory => unsafe {
-                let addr = self.mapping.as_ref().unwrap().as_mut_ptr().cast::<u16>();
-                addr.byte_offset(byte_offset as isize).write_unaligned(value)
-            },
-            AddressSpace::SystemIo => {
-                self.handler.write_io_u16(self.gas.address as u16 + byte_offset as u16, value)
-            }
-            address_space => todo!("{address_space:?}"),
-        }
+    pub fn write_u16(&self, _byte_offset: u64, _value: u16) {
+        todo!();
     }
 }
-
+*/
 /// Returns the access size that should be made for a given `GenericAddress`, in bits.
 fn gas_decode_access_bit_width(gas: GenericAddress) -> Result<u8, AcpiError> {
     /*
