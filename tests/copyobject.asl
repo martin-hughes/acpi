@@ -1,5 +1,8 @@
-// These tests are based on the first two rows of the following table:
+// These tests are based on the following table:
 // [Object Storing and Copying Rules](https://uefi.org/specs/ACPI/6.6/19_ASL_Reference.html#object-storing-and-copying-rules)
+//
+// Note: Tests are in a fairly arbitrary order of increasing "mental complexity". Which row of the above table they
+// relate to is given in brackets.
 
 // TODO: Check that a suitable error occurs for copying non-integer/buffer to fields. (as described in row 3 of the
 // table)
