@@ -44,6 +44,7 @@ use alloc::{
 };
 use bit_field::BitField;
 use core::{
+    assert_matches,
     mem,
     ptr,
     slice,
@@ -242,7 +243,7 @@ where
     /// not the header at the start of a table. If you've used [`Interpreter::new_from_platform`],
     /// you'll likely not need to load any tables manually.
     pub fn load_table(&self, stream: &[u8]) -> Result<(), AmlError> {
-        let context = unsafe { MethodContext::new_from_table(stream) };
+        let context = unsafe { MethodContext::new_from_table(stream, None) };
         self.do_execute_method(context)?;
         Ok(())
     }
@@ -521,15 +522,14 @@ where
                         let operand = operand.clone().unwrap_reference();
                         let token = self.object_token.lock();
 
-                        let operand = unsafe {operand.gain_mut(&token)};
+                        let operand = unsafe { operand.gain_mut(&token) };
                         let value = match operand {
-                            Object::Integer(operand) => {
-                                *operand
-                            }
-                            Object::BufferField{..} => {
-                                operand.to_integer(self.integer_size)?
-                            }
-                            _ => Err(AmlError::ObjectNotOfExpectedType { expected: ObjectType::Integer, got: operand.typ() })?
+                            Object::Integer(operand) => *operand,
+                            Object::BufferField { .. } => operand.to_integer(self.integer_size)?,
+                            _ => Err(AmlError::ObjectNotOfExpectedType {
+                                expected: ObjectType::Integer,
+                                got: operand.typ(),
+                            })?,
                         };
 
                         let new_value = match op.op {
@@ -542,10 +542,10 @@ where
                             Object::Integer(operand) => {
                                 *operand = new_value;
                             }
-                            Object::BufferField{..} => {
+                            Object::BufferField { .. } => {
                                 operand.write_buffer_field(&new_value.to_le_bytes(), &token)?;
                             }
-                            _ => unreachable!()
+                            _ => unreachable!(),
                         }
 
                         context.contribute_arg(Argument::Object(Object::Integer(new_value).wrap()));
@@ -790,7 +790,7 @@ where
                          * To make these consistent, we always remove the block here, making sure
                          * we've finished it as a sanity check.
                          */
-                        assert_eq!(context.current_block.kind, BlockKind::Package);
+                        assert_matches!(context.current_block.kind, BlockKind::Package);
                         assert_eq!(context.peek(), Err(AmlError::RunOutOfStream));
                         context.current_block = context.block_stack.pop().unwrap();
                         context.contribute_arg(Argument::Object(Object::Package(elements).wrap()));
@@ -815,7 +815,7 @@ where
                          * As above, we always remove the block here after the in-flight op has
                          * been retired.
                          */
-                        assert_eq!(context.current_block.kind, BlockKind::VarPackage);
+                        assert_matches!(context.current_block.kind, BlockKind::VarPackage);
                         assert_eq!(context.peek(), Err(AmlError::RunOutOfStream));
                         context.current_block = context.block_stack.pop().unwrap();
                         context.contribute_arg(Argument::Object(Object::Package(elements).wrap()));
@@ -929,11 +929,9 @@ where
                         context.retire_op(op);
                     }
                     Opcode::Load => {
-                        extract_args!(op => [Argument::Namestring(object), Argument::Object(result)]);
-                        // TODO: read the AML from the object and load it
-                        warn!("Ignoring unsupported DefLoad operation (object={}, result = {})", object, result);
+                        extract_args!(op => [Argument::Namestring(ns), Argument::Object(result_target)]);
+                        self.do_load(ns, &mut context, &mut context_stack, result_target.clone())?;
                         context.retire_op(op);
-                        return Err(AmlError::LibUnimplemented);
                     }
                     Opcode::LoadTable => {
                         extract_args!(op => [
@@ -944,13 +942,21 @@ where
                             Argument::Object(parameter_path),
                             Argument::Object(parameter_data),
                         ]);
-                        // TODO: search for the table in the RSDT/XSDT and load the contained AML
-                        warn!(
-                            "Ignoring unsupported DefLoadTable operation (signature = {}, oem_id = {}, oem_table_id = {}, root_path = {}, parameter_path = {}, parameter_data = {})",
-                            signature, oem_id, oem_table_id, root_path, parameter_path, parameter_data
-                        );
+
+                        let result = Object::Integer(
+                            self.do_load_table(
+                                signature,
+                                oem_id,
+                                oem_table_id,
+                                root_path,
+                                parameter_path,
+                                parameter_data,
+                            )?
+                            .into(),
+                        )
+                        .wrap();
+                        context.contribute_arg(Argument::Object(result));
                         context.retire_op(op);
-                        return Err(AmlError::LibUnimplemented);
                     }
                     Opcode::Sleep => {
                         extract_args!(op => [Argument::Object(msec)]);
@@ -1134,8 +1140,17 @@ where
                      * depends on what type of block it was.
                      */
                     match context.current_block.kind {
-                        BlockKind::Table => {
-                            break Ok(Object::Uninitialized.wrap());
+                        BlockKind::Table { result_target } => {
+                            if let Some(prev_context) = context_stack.pop() {
+                                context = prev_context;
+                                context.contribute_arg(Argument::Object(Object::Integer(1).wrap()));
+                                if let Some(result_target) = result_target {
+                                    self.do_store(result_target, Object::Integer(1).wrap())?;
+                                }
+                                continue;
+                            } else {
+                                break Ok(Object::Uninitialized.wrap());
+                            }
                         }
                         BlockKind::Method { method_scope } => {
                             self.namespace.lock().remove_level(method_scope)?;
@@ -1410,7 +1425,7 @@ where
                     context.start(OpInFlight::new_with(
                         Opcode::Load,
                         vec![Argument::Namestring(name)],
-                        &[ResolveBehaviour::Target],
+                        &[ResolveBehaviour::Placeholder, ResolveBehaviour::Target],
                     ));
                 }
                 Opcode::Stall => context.start(OpInFlight::new(Opcode::Stall, &[ResolveBehaviour::TermArg])),
@@ -2945,6 +2960,62 @@ where
         context.start(OpInFlight::new(Opcode::While, &[ResolveBehaviour::TermArg]));
         Ok(())
     }
+
+    fn do_load(
+        &self,
+        namestring: &AmlName,
+        context: &mut MethodContext,
+        context_stack: &mut Vec<MethodContext>,
+        result_target: WrappedObject,
+    ) -> Result<(), AmlError> {
+        let (_, table) = self.namespace.lock().search(namestring, &context.current_scope)?;
+
+        let stream = match &*table {
+            Object::Buffer(stream) => stream.as_slice(),
+
+            // TODO: Shouldn't be difficult.
+            Object::OpRegion(_) => Err(AmlError::LibUnimplemented)?,
+            Object::FieldUnit(_) => Err(AmlError::LibUnimplemented)?,
+            _ => Err(AmlError::InvalidOperationOnObject { op: Operation::Load, typ: table.typ() })?,
+        };
+
+        // TODO: It's unclear when we'd ever return false...
+        self.load_table_stream(stream, context, context_stack, Some(result_target))
+    }
+
+    fn do_load_table(
+        &self,
+        signature: &WrappedObject,
+        oem_id: &WrappedObject,
+        oem_table_id: &WrappedObject,
+        root_path: &WrappedObject,
+        parameter_path: &WrappedObject,
+        parameter_data: &WrappedObject,
+    ) -> Result<bool, AmlError> {
+        // TODO: search for the table in the RSDT/XSDT and load the contained AML
+        warn!(
+            "Ignoring unsupported DefLoadTable operation (signature = {}, oem_id = {}, oem_table_id = {}, root_path = {}, parameter_path = {}, parameter_data = {})",
+            signature, oem_id, oem_table_id, root_path, parameter_path, parameter_data
+        );
+        Ok(false)
+    }
+
+    fn load_table_stream(
+        &self,
+        stream: &[u8],
+        context: &mut MethodContext,
+        context_stack: &mut Vec<MethodContext>,
+        result_target: Option<WrappedObject>,
+    ) -> Result<(), AmlError> {
+        // TODO: Deal with scope
+        // TODO: What are the safety constraints for this function?
+        let new_context =
+            unsafe { MethodContext::new_from_table(&stream[size_of::<SdtHeader>()..], result_target) };
+        let old_context = mem::replace(context, new_context);
+        context_stack.push(old_context);
+
+        Ok(())
+    }
 }
 
 /// A `MethodContext` represents a piece of running AML code - either a real method, or the
@@ -2972,9 +3043,11 @@ impl Block {
     }
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(/*PartialEq,*/ Debug)]
 pub enum BlockKind {
-    Table,
+    Table {
+        result_target: Option<WrappedObject>,
+    },
     Method {
         method_scope: AmlName,
     },
@@ -3099,8 +3172,8 @@ impl OpInFlight {
 }
 
 impl MethodContext {
-    unsafe fn new_from_table(stream: &[u8]) -> MethodContext {
-        let block = Block { stream: Vec::from(stream), pc: 0, kind: BlockKind::Table };
+    unsafe fn new_from_table(stream: &[u8], result_target: Option<WrappedObject>) -> MethodContext {
+        let block = Block { stream: Vec::from(stream), pc: 0, kind: BlockKind::Table { result_target } };
         MethodContext {
             current_block: block,
             block_stack: Vec::new(),
@@ -3601,6 +3674,7 @@ pub enum Operation {
     ResetEvent,
     SignalEvent,
     WaitEvent,
+    Load,
 }
 
 #[derive(Clone, PartialEq, Debug)]
