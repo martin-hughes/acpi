@@ -189,7 +189,11 @@ impl WrappedObject {
         // for the strange Windows NT behaviour handled in the `match arg_to_local` statement below.
         let mut arg_to_local: Option<WrappedObject> = None;
 
-        let mut target = self;
+        // A package element is replaced, unless it holds a reference
+        let mut target = match *self {
+            Object::Reference { kind: ReferenceKind::Index, ref inner } => inner.clone(),
+            _ => self.clone(),
+        };
 
         loop {
             let Object::Reference { kind, ref inner } = *target else {
@@ -338,7 +342,7 @@ impl Object {
                     });
                 }
             };
-            if *length <= integer_size as usize {
+            if *length <= integer_size as usize * 8 {
                 let mut dst = [0u8; 8];
                 copy_bits(buffer, *offset, &mut dst, 0, *length);
                 Ok(Object::Integer(u64::from_le_bytes(dst)))

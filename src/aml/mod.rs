@@ -504,7 +504,6 @@ where
                     Opcode::Add
                     | Opcode::Subtract
                     | Opcode::Multiply
-                    | Opcode::Divide
                     | Opcode::ShiftLeft
                     | Opcode::ShiftRight
                     | Opcode::Mod
@@ -513,28 +512,42 @@ where
                     | Opcode::Or
                     | Opcode::Nor
                     | Opcode::Xor => self.do_binary_maths(&mut context, op)?,
+                    Opcode::Divide => self.do_divide(&mut context, op)?,
                     Opcode::Not | Opcode::FindSetLeftBit | Opcode::FindSetRightBit => {
                         self.do_unary_maths(&mut context, op)?;
                     }
                     Opcode::Increment | Opcode::Decrement => {
-                        let [Argument::Object(operand)] = &op.arguments[..] else { panic!() };
+                        extract_args!(op => [Argument::Object(operand)]);
                         let operand = operand.clone().unwrap_reference();
                         let token = self.object_token.lock();
 
-                        let Object::Integer(operand) = (unsafe { operand.gain_mut(&token) }) else {
-                            Err(AmlError::ObjectNotOfExpectedType {
-                                expected: ObjectType::Integer,
-                                got: operand.typ(),
-                            })?
+                        let operand = unsafe {operand.gain_mut(&token)};
+                        let value = match operand {
+                            Object::Integer(operand) => {
+                                *operand
+                            }
+                            Object::BufferField{..} => {
+                                operand.to_integer(self.integer_size)?
+                            }
+                            _ => Err(AmlError::ObjectNotOfExpectedType { expected: ObjectType::Integer, got: operand.typ() })?
                         };
 
                         let new_value = match op.op {
-                            Opcode::Increment => operand.wrapping_add(1),
-                            Opcode::Decrement => operand.wrapping_sub(1),
+                            Opcode::Increment => value.wrapping_add(1),
+                            Opcode::Decrement => value.wrapping_sub(1),
                             _ => unreachable!(),
                         };
 
-                        *operand = new_value;
+                        match operand {
+                            Object::Integer(operand) => {
+                                *operand = new_value;
+                            }
+                            Object::BufferField{..} => {
+                                operand.write_buffer_field(&new_value.to_le_bytes(), &token)?;
+                            }
+                            _ => unreachable!()
+                        }
+
                         context.contribute_arg(Argument::Object(Object::Integer(new_value).wrap()));
                         context.retire_op(op);
                     }
@@ -664,13 +677,11 @@ where
                         }
                     }
                     Opcode::Notify => {
-                        // TODO: may need special handling on the node to get path?
-                        extract_args!(op => [Argument::Namestring(name), Argument::Object(value)]);
-                        let value = value.as_integer()?;
-
-                        info!("Notify {:?} with value {}", name, value);
-                        // TODO: support
-                        return Err(AmlError::LibUnimplemented);
+                        // TODO: support notify handlers (ACPICA without one ignores it too)
+                        extract_args!(op => [Argument::Object(object), Argument::Object(value)]);
+                        let value = value.clone().unwrap_transparent_reference().as_integer()?;
+                        info!("Ignoring Notify of {} with value {}", object, value);
+                        context.retire_op(op);
                     }
                     Opcode::FromBCD => self.do_from_bcd(&mut context, op)?,
                     Opcode::ToBCD => self.do_to_bcd(&mut context, op)?,
@@ -816,7 +827,7 @@ where
                             Argument::PkgLength(then_length),
                             Argument::Object(predicate),
                         ]);
-                        let predicate = predicate.as_integer()?;
+                        let predicate = predicate.clone().unwrap_transparent_reference().as_integer()?;
                         let remaining_then_length = then_length - (context.current_block.pc - start_pc);
 
                         if predicate > 0 {
@@ -849,7 +860,7 @@ where
                     | opcode @ Opcode::CreateQWordField => {
                         extract_args!(op => [Argument::Object(buffer), Argument::Object(index)]);
                         let name = context.namestring()?;
-                        let index = index.as_integer()?;
+                        let index = index.clone().unwrap_transparent_reference().as_integer()?;
                         let (offset, length) = match opcode {
                             Opcode::CreateBitField => (index, 1),
                             Opcode::CreateByteField => (index * 8, 8),
@@ -867,8 +878,8 @@ where
                     Opcode::CreateField => {
                         extract_args!(op => [Argument::Object(buffer), Argument::Object(bit_index), Argument::Object(num_bits)]);
                         let name = context.namestring()?;
-                        let bit_index = bit_index.as_integer()?;
-                        let num_bits = num_bits.as_integer()?;
+                        let bit_index = bit_index.clone().unwrap_transparent_reference().as_integer()?;
+                        let num_bits = num_bits.clone().unwrap_transparent_reference().as_integer()?;
 
                         self.namespace.lock().insert(
                             name.resolve(&context.current_scope)?,
@@ -1939,8 +1950,7 @@ where
     }
 
     fn do_binary_maths(&self, context: &mut MethodContext, op: OpInFlight) -> Result<(), AmlError> {
-        extract_args!(op[0..3] => [Argument::Object(left), Argument::Object(right), Argument::Object(target)]);
-        let target2 = if op.op == Opcode::Divide { Some(&op.arguments[3]) } else { None };
+        extract_args!(op => [Argument::Object(left), Argument::Object(right), Argument::Object(target)]);
 
         let left = left.clone().unwrap_transparent_reference().to_integer(self.integer_size)?;
         let right = right.clone().unwrap_transparent_reference().to_integer(self.integer_size)?;
@@ -1949,15 +1959,9 @@ where
             Opcode::Add => left.wrapping_add(right),
             Opcode::Subtract => left.wrapping_sub(right),
             Opcode::Multiply => left.wrapping_mul(right),
-            Opcode::Divide => {
-                if let Some(Argument::Object(remainder)) = target2 {
-                    self.do_store(remainder.clone(), Object::Integer(left.wrapping_rem(right)).wrap())?;
-                }
-                left.wrapping_div_euclid(right)
-            }
             Opcode::ShiftLeft => left.wrapping_shl(right as u32),
             Opcode::ShiftRight => left.wrapping_shr(right as u32),
-            Opcode::Mod => left.wrapping_rem(right),
+            Opcode::Mod => left.checked_rem(right).ok_or(AmlError::DivideByZero)?,
             Opcode::Nand => !(left & right),
             Opcode::And => left & right,
             Opcode::Or => left | right,
@@ -1968,6 +1972,25 @@ where
 
         let result = Object::Integer(result).wrap();
         let result = self.do_store(target.clone(), result)?;
+        context.contribute_arg(Argument::Object(result));
+        context.retire_op(op);
+        Ok(())
+    }
+
+    fn do_divide(&self, context: &mut MethodContext, op: OpInFlight) -> Result<(), AmlError> {
+        extract_args!(op => [
+            Argument::Object(dividend),
+            Argument::Object(divisor),
+            Argument::Object(remainder_target),
+            Argument::Object(quotient_target)
+        ]);
+
+        let dividend = dividend.clone().unwrap_transparent_reference().to_integer(self.integer_size)?;
+        let divisor = divisor.clone().unwrap_transparent_reference().to_integer(self.integer_size)?;
+        let quotient = dividend.checked_div(divisor).ok_or(AmlError::DivideByZero)?;
+
+        self.do_store(remainder_target.clone(), Object::Integer(dividend % divisor).wrap())?;
+        let result = self.do_store(quotient_target.clone(), Object::Integer(quotient).wrap())?;
         context.contribute_arg(Argument::Object(result));
         context.retire_op(op);
         Ok(())
@@ -2119,7 +2142,7 @@ where
         let result = if source.is_empty() {
             Object::String(String::new())
         } else {
-            let mut buffer = source.split_inclusive(|b| *b == b'\0').next().unwrap();
+            let mut buffer = source.split(|b| *b == b'\0').next().unwrap();
             if length < usize::MAX {
                 buffer = &buffer[0..usize::min(length, buffer.len())];
             }
@@ -2363,7 +2386,7 @@ where
             }
             Object::Package(ref package) => {
                 let Some(element) = package.get(index_value as usize) else { Err(AmlError::IndexOutOfBounds)? };
-                Object::Reference { kind: ReferenceKind::RefOf, inner: element.clone() }
+                Object::Reference { kind: ReferenceKind::Index, inner: element.clone() }
             }
             _ => Err(AmlError::IndexOutOfBounds)?,
         }
@@ -2426,11 +2449,13 @@ where
     }
 
     fn do_deref_of(&self, object: WrappedObject, current_scope: &AmlName) -> Result<WrappedObject, AmlError> {
+        let object = object.unwrap_transparent_reference();
+        let through_reference = matches!(*object, Object::Reference { .. });
         let object = self.resolve_name_path(object)?;
         match &*object {
             Object::BufferField { .. } => Ok(object.read_buffer_field(self.integer_size)?.wrap()),
             Object::FieldUnit(field) => self.do_field_read(field),
-            Object::String(path) => {
+            Object::String(path) if !through_reference => {
                 let path = AmlName::from_str(path)?;
                 let (_, object) = self.namespace.lock().search(&path, current_scope)?;
                 Ok(object.clone())
@@ -2442,7 +2467,7 @@ where
 
     /// Perform a store of `object` into `target`, matching the expected behaviour of `DefStore`,
     /// which depends on the target:
-    ///    - Locals and Index references are overwritten, unless the Local contains a reference
+    ///    - Locals and Index references are overwritten, unless the Local or element contains a reference
     ///      (e.g. obtained via `RefOf`), in which case a store is performed to the referenced
     ///      object with implicit casting.
     ///    - Args are overwritten, unless they contain a reference, in which case the referenced
@@ -2538,7 +2563,7 @@ where
                     inner.clone().unwrap_transparent_reference()
                 }
             }
-            ReferenceKind::Index => todo!(),
+            ReferenceKind::Index => inner.clone(),
             ReferenceKind::RefOf | ReferenceKind::Unresolved => return Err(AmlError::StoreToInvalidReferenceType),
         };
 
@@ -3660,6 +3685,9 @@ pub enum AmlError {
 
     /// The maximum length of time a loop ([`LOOP_TIMEOUT_NS`]) can execute for has been exceeded.
     LoopTimeout,
+
+    /// A `Divide` or `Mod` by zero.
+    DivideByZero,
 
     /// The provided argument to the current operation is invalid.
     ///

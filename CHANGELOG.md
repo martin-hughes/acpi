@@ -1,5 +1,11 @@
 # Version History
 
+## 0.0.8
+
+* Update to upstream-main revision c62c343
+
+> This is a convenience release. There are no other merged branches, this release matches upstream.
+
 ## 0.0.7
 
 * Update to upstream-main revision a69a4df
