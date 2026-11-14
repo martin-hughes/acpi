@@ -942,20 +942,14 @@ where
                             Argument::Object(parameter_path),
                             Argument::Object(parameter_data),
                         ]);
-
-                        let result = Object::Integer(
-                            self.do_load_table(
-                                signature,
-                                oem_id,
-                                oem_table_id,
-                                root_path,
-                                parameter_path,
-                                parameter_data,
-                            )?
-                            .into(),
-                        )
-                        .wrap();
-                        context.contribute_arg(Argument::Object(result));
+                        self.do_load_table(
+                            signature,
+                            oem_id,
+                            oem_table_id,
+                            root_path,
+                            parameter_path,
+                            parameter_data,
+                        )?;
                         context.retire_op(op);
                     }
                     Opcode::Sleep => {
@@ -2991,13 +2985,20 @@ where
         root_path: &WrappedObject,
         parameter_path: &WrappedObject,
         parameter_data: &WrappedObject,
-    ) -> Result<bool, AmlError> {
+    ) -> Result<(), AmlError> {
         // TODO: search for the table in the RSDT/XSDT and load the contained AML
         warn!(
             "Ignoring unsupported DefLoadTable operation (signature = {}, oem_id = {}, oem_table_id = {}, root_path = {}, parameter_path = {}, parameter_data = {})",
             signature, oem_id, oem_table_id, root_path, parameter_path, parameter_data
         );
-        Ok(false)
+
+        self.handler.get_table_stream(
+            &*signature.as_string()?,
+            &*oem_id.as_string()?,
+            &*oem_table_id.as_string()?,
+        );
+        //todo: implement the parameters.
+        Ok(())
     }
 
     fn load_table_stream(

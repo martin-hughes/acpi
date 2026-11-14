@@ -471,6 +471,11 @@ pub trait Handler: Clone {
             fatal_arg
         );
     }
+
+    #[cfg(feature = "aml")]
+    fn get_table_stream(&self, signature: &str, oem_id: &str, oem_table_id: &str) -> Option<&[u8]> {
+        None
+    }
 }
 
 impl<H: Handler> Handler for &H {
@@ -633,6 +638,12 @@ impl<H: Handler> Handler for &H {
     #[cfg(feature = "aml")]
     fn handle_fatal_error(&self, fatal_type: u8, fatal_code: u32, fatal_arg: u64) {
         (**self).handle_fatal_error(fatal_type, fatal_code, fatal_arg)
+    }
+
+    #[inline]
+    #[cfg(feature = "aml")]
+    fn get_table_stream(&self, signature: &str, oem_id: &str, oem_table_id: &str) -> Option<&[u8]> {
+        (**self).get_table_stream(signature, oem_id, oem_table_id)
     }
 }
 
