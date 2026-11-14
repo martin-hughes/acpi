@@ -1,7 +1,7 @@
 //! A [`Handler`] stores the ACPI tables that could be referenced in a test, forwarding all other
 //! calls
 
-use crate::{tables::TestAcpiTable};
+use crate::tables::TestAcpiTable;
 use acpi::{Handle, Handler, RawPhysicalMapping, aml::object::Object};
 use log::info;
 use pci_types::PciAddress;
@@ -16,15 +16,15 @@ use std::{
 #[derive(Clone)]
 pub struct TableStoreHandler<H> {
     next_handler: H,
-    tables: Arc<Mutex<Vec<TestAcpiTable>>>,
+    tables: Arc<Vec<TestAcpiTable>>,
 }
 
 impl<H> TableStoreHandler<H>
 where
     H: Handler,
 {
-    pub fn new(next_handler: H) -> Self {
-        Self { next_handler, tables: Arc::new(Mutex::new(Vec::new())) }
+    pub fn new(next_handler: H, tables: Vec<TestAcpiTable>) -> Self {
+        Self { next_handler, tables: Arc::new(tables) }
     }
 }
 

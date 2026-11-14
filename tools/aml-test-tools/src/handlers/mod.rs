@@ -8,3 +8,4 @@ pub mod logging_handler;
 pub mod null_handler;
 pub mod std_test_handler;
 pub mod sys_timer_handler;
+pub mod table_store_handler;
